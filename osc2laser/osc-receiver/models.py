@@ -691,7 +691,7 @@ class AlgebraicCurve(LaserObject):
                 projected_horizon = self.apply_point_perspective(horizon_pts)
                 if projected_horizon:
                     final_point_list.extend(
-                        create_laser_line_with_dwells(projected_horizon, color_rgb=(255, 0, 0), dwell_count=20)
+                        create_laser_line_with_dwells(projected_horizon, color_rgb=(0, 255, 0), dwell_count=20)
                     )
 
         self.point_list = final_point_list
