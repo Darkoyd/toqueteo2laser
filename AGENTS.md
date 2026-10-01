@@ -45,14 +45,16 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
 ## Hardware
 
 - Both Bela I2C connectors are bus 1. Trill Flex `0x48` (DIFF, CentroidDetection → `/signal/flex` 0..1),
-  Trill Craft `0x30` (DIFF, 30 pads → `/signal/craft/<n>` 0..1, 0 below `kPadThreshold`).
+  Trill Craft `0x30` (DIFF, 30 pads → `/signal/craft/<n>` 0..1, 0 below `kPadThreshold`, each pad auto-ranged to the
+  strongest reading seen, starting at `kPadFullTouch`). Recalibrate (new baseline + reset ranges, hands off the pads) by sending
+  `/craft/calibrate` to udp `192.168.7.2:2347`.
 - `render()` fills `gIn[]` (names in `kNames`), the aux task sends each as `/signal/<name>` 0..1:
   pots on Analog In 0–1 → `pot/0..1`; KY-023 joystick on 3.3V, VRx/VRy on Analog In 2–3 → `joy/x`, `joy/y`;
   piezos on Audio In L/R (1 MΩ across each) → `piezo/0..1` level envelope;
   buttons on digital 0 (joystick SW) and 1, 10k pull-up to 3.3V, pressed = GND → `joy/button`, `button` (1 = pressed).
 - SSD1306 128x64 OLED on I2C bus 1 `0x3C`, optional. Bela listens on udp `:2347` for `/display "<text>"`
   (`\n` = new line, lines ≤ 10 chars drawn double size). The Signal Lab sends the shape name on every `/laserobject` step.
-- Tuning knobs live as consts at the top of `render.cpp` (`kPrescaler`, `kNoiseThreshold`, `kPadThreshold`,
+- Tuning knobs live as consts at the top of `render.cpp` (`kPrescaler`, `kNoiseThreshold`, `kCraftPrescaler`, `kCraftNoiseThreshold`, `kPadThreshold`, `kPadFullTouch`,
   `kMinChange`, `kPotMax`, `kPotSmooth`, `kPiezoGain`, `kPiezoFloor`, `kPiezoRelease`).
   Keep them; sensors need tuning on the real hardware.
 - Bela rules: I2C reads in the aux task, never `render()`; OSC via `sendNonRt()`; builds use `-ffast-math`, so no NaN sentinels.
