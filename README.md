@@ -10,14 +10,24 @@ Trill / pots / joystick / piezos -> Bela (laser-osc-controller) -> Signal Lab (M
 - `signal-lab/` maps signals onto laser knobs, web UI on http://127.0.0.1:8000.
 - `osc2laser/` fork of [oliverbyte/osc2laser](https://github.com/oliverbyte/osc2laser); our changes: `git diff osc2laser-upstream -- osc2laser`.
 
+## Setup
+
+The Python venv is not checked in. One venv, `osc2laser/osc-receiver/.venv`, runs both the receiver and the Signal Lab.
+Create it with [uv](https://docs.astral.sh/uv/) (`brew install uv`):
+
+```sh
+cd osc2laser/osc-receiver
+uv venv -p 3.11 .venv
+uv pip install -p .venv -r requirements.txt
+```
+
+Without uv: `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+
 ## Run
 
 ```sh
 ./start.sh        # receiver + Signal Lab, Ctrl-C stops both (-v for verbose)
 ```
-
-The receiver venv is not checked in. To recreate it with uv (Python 3.11), run this in `osc2laser/osc-receiver/`:
-`uv venv -p 3.11 .venv && uv pip install -r requirements.txt pytest`.
 
 Tests: `cd osc2laser/osc-receiver && .venv/bin/pytest -q`
 
