@@ -15,7 +15,7 @@
     "in_max": 1.0,
     "in_min": 0.0,
     "lfo": null,
-    "scale": 0.5,
+    "scale": 0.4,
     "signal": "joy/y",
     "wave": "sine"
   },
@@ -45,7 +45,7 @@
     "in_max": 1.0,
     "in_min": 0.0,
     "lfo": null,
-    "scale": 0.5,
+    "scale": 0.4,
     "signal": "joy/x",
     "wave": "sine"
   }
