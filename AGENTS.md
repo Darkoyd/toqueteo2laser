@@ -10,8 +10,8 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
 
 ## Layout
 
-- `osc2laser/` fork of https://github.com/oliverbyte/osc2laser (own git repo, upstream HEAD `76c637a`).
-  **Leave the upstream stack alone.** Only change/audit what we added: `git -C osc2laser diff` plus untracked files.
+- `osc2laser/` fork of https://github.com/oliverbyte/osc2laser (upstream `76c637a`, tagged `osc2laser-upstream`).
+  **Leave the upstream stack alone.** Only change/audit what we added: `git diff osc2laser-upstream -- osc2laser`.
   Ours: perspective + curve code in `osc-receiver/models.py` (`apply_point_perspective`, `sort_path`, `Parabola`,
   homography helpers, `AlgebraicCurve` → `Cubic`/`Conic`/`Hyperelliptic`), perspective OSC in `osc_input.py`,
   `test_template.py`, `start.sh`, macOS dylibs, `osc-senders/open-stage-control/pavillion-template.json`.
@@ -21,7 +21,7 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
   LFO knobs are sent by a 50 Hz loop with the main signal as the centre). Signals register themselves on their first message.
   Template toggles and dropdowns are targets too: a signal rising past the middle of in_min..in_max flips the toggle
   or steps the dropdown (`SKIP` lists values never stepped to, e.g. `/laserobject` 0 Blank).
-- `laser-osc-controller/` Bela project (own git repo): `render.cpp` only. Folder name = Bela project name.
+- `laser-osc-controller/` Bela project: `render.cpp` only. Folder name = Bela project name.
 - `.bela-sdk/` Bela headers for IntelliSense (gitignored). Has no Trill/OscSender libs, so compile on the board.
 - `.vscode/tasks.json` Bela sync/build/run over ssh, receiver, Open Stage Control, tests.
 
