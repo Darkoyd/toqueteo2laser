@@ -1,0 +1,18 @@
+{
+  "configurations": [
+    {
+      "name": "Bela",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/.bela-sdk/include",
+        "${workspaceFolder}/.bela-sdk/libraries",
+        "${workspaceFolder}/.bela-sdk/xenomai"
+      ],
+      "defines": ["__linux__", "__arm__"],
+      "cStandard": "gnu11",
+      "cppStandard": "c++11",
+      "intelliSenseMode": "linux-gcc-arm"
+    }
+  ],
+  "version": 4
+}

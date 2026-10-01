@@ -1,0 +1,52 @@
+{
+  "/laserobject": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "button",
+    "wave": "sine"
+  },
+  "/parameters/homography_pitch": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 0.5,
+    "signal": "joy/y",
+    "wave": "sine"
+  },
+  "/parameters/homography_roll": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "pot/0",
+    "wave": "sine"
+  },
+  "/parameters/homography_show_square": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "joy/button",
+    "wave": "sine"
+  },
+  "/parameters/homography_yaw": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 0.5,
+    "signal": "joy/x",
+    "wave": "sine"
+  }
+}
