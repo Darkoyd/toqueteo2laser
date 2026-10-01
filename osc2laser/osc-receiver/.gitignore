@@ -1,0 +1,7 @@
+venv
+*.log
+__pycache__
+*.bak
+playground
+build
+main.spec
