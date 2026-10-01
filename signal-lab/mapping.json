@@ -9,6 +9,66 @@
     "signal": "button",
     "wave": "sine"
   },
+  "/parameters/conic_a00": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "craft/15",
+    "wave": "sine"
+  },
+  "/parameters/conic_a01": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "craft/17",
+    "wave": "sine"
+  },
+  "/parameters/conic_a02": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "craft/20",
+    "wave": "sine"
+  },
+  "/parameters/conic_a10": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "craft/16",
+    "wave": "sine"
+  },
+  "/parameters/conic_a11": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "craft/19",
+    "wave": "sine"
+  },
+  "/parameters/conic_a20": {
+    "depth": 0.25,
+    "hz_max": 5.0,
+    "in_max": 1.0,
+    "in_min": 0.0,
+    "lfo": null,
+    "scale": 1.0,
+    "signal": "craft/18",
+    "wave": "sine"
+  },
   "/parameters/homography_pitch": {
     "depth": 0.25,
     "hz_max": 5.0,
