@@ -1,0 +1,82 @@
+{
+  // Run from a file inside a project folder (e.g. laser-osc-controller/render.cpp).
+  // The folder name is used as the Bela project name.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Bela: sync",
+      "type": "shell",
+      "command": "rsync -av --delete --exclude build --exclude .git --exclude .DS_Store '${fileDirname}/' root@bela.local:Bela/projects/${relativeFileDirname}/",
+      "problemMatcher": []
+    },
+    {
+      "label": "Bela: build",
+      "type": "shell",
+      "command": "ssh root@bela.local 'make -C ~/Bela PROJECT=${relativeFileDirname} all'",
+      "dependsOn": "Bela: sync",
+      "problemMatcher": {
+        "owner": "cpp",
+        "fileLocation": ["relative", "${fileDirname}"],
+        "pattern": {
+          "regexp": "^.*/projects/[^/]+/(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
+        }
+      }
+    },
+    {
+      "label": "Bela: build & run",
+      "type": "shell",
+      "command": "ssh -t root@bela.local 'make -C ~/Bela PROJECT=${relativeFileDirname} run'",
+      "dependsOn": "Bela: sync",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": {
+        "owner": "cpp",
+        "fileLocation": ["relative", "${fileDirname}"],
+        "pattern": {
+          "regexp": "^.*/projects/[^/]+/(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
+        }
+      }
+    },
+    {
+      "label": "Bela: stop",
+      "type": "shell",
+      "command": "ssh root@bela.local 'make -C ~/Bela stop'",
+      "problemMatcher": []
+    },
+    {
+      "label": "Bela: shell",
+      "type": "shell",
+      "command": "ssh root@bela.local",
+      "problemMatcher": []
+    },
+    {
+      "label": "osc2laser: receiver",
+      "type": "shell",
+      "command": "osc2laser/osc-receiver/start.sh",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "signal-lab",
+      "type": "shell",
+      "command": "osc2laser/osc-receiver/.venv/bin/python signal-lab/signal_lab.py",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "osc2laser: open-stage-control",
+      "type": "shell",
+      "command": "/Applications/open-stage-control.app/Contents/MacOS/open-stage-control --send 127.0.0.1:2345 --load \"osc2laser/osc-senders/open-stage-control/Open Stage Control Template.json\"",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "osc2laser: test template",
+      "type": "shell",
+      "command": "cd osc2laser/osc-receiver && .venv/bin/pytest -q",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

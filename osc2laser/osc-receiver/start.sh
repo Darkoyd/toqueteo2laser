@@ -1,1 +1,2 @@
-python3.9 main.py
+#!/bin/sh
+cd "$(dirname "$0")" && exec .venv/bin/python main.py "$@"

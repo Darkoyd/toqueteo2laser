@@ -1,4 +1,4 @@
-from models import LaserPoint, Blank, StaticLine, StaticWave, Effect, AnimatedWave, StaticCircle, StaticPoint, StaticStars
+from models import LaserPoint, Blank, StaticLine, StaticWave, Effect, AnimatedWave, StaticCircle, StaticPoint, StaticStars, Parabola, Cubic, Conic, Hyperelliptic
 import logging
 import configparser
 import time
@@ -32,6 +32,9 @@ def handle_osc_message(address, *args):
                 logging.info(f'[OSC] Added new laser object: {laser_object}')
         except Exception as e:
             logging.error(f'[OSC] Error while adding new laser object: {e}')
+    # /effect/perspective/pitch -> PERSPECTIVE_PITCH
+    elif address.startswith("/effect/perspective/"):
+        handle_effect('PERSPECTIVE_' + address.rsplit('/', 1)[1].upper(), args[0])
     # /effect is related to any LaserObject
     elif address.startswith("/effect/"):
         if address == "/effect/xy_pos":
@@ -92,6 +95,7 @@ def process_osc_input():
     disp.map("/effect/color_change/r", handle_osc_message)
     disp.map("/effect/color_change/g", handle_osc_message)
     disp.map("/effect/color_change/b", handle_osc_message)
+    disp.map("/effect/perspective/*", handle_osc_message)
     disp.map("/parameters/*", handle_osc_message)
 
     server = osc_server.ThreadingOSCUDPServer(
@@ -140,7 +144,11 @@ def setup():
         AnimatedWave(0), # Blue animated wave
         StaticCircle(int(global_data.config['laser_output']['height'])/2, int(global_data.config['laser_output']['width'])/2, int(global_data.config['laser_output']['height'])/5, 0, 255, 0, 0), # Green static circle
         StaticPoint(laser_point5,0),
-        StaticStars() # white stars
+        StaticStars(), # white stars
+        Parabola(), # green parabola
+        Cubic(), # yellow cubic
+        Conic(), # cyan conic
+        Hyperelliptic() # magenta hyperelliptic
     ]
 
 setup()
