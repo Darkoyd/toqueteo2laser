@@ -31,12 +31,23 @@
   button.cap { background:none; border:1px solid var(--line); color:var(--dim); border-radius:4px; cursor:pointer; font-size:11px; padding:2px 5px; }
   button.cap:hover { color:var(--fg); }
   #err { color:var(--warn); margin-left:8px; font-size:12px; }
+  #craft { margin-bottom:16px; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  #craft summary { cursor:pointer; font-weight:600; }
+  #craft div { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:8px; }
+  #craft label { color:var(--dim); font-size:12px; }
+  #craft p { color:var(--dim); font-size:12px; margin:6px 0 2px; }
   @media (max-width:700px) { .range, .out { display:none; } }
 </style>
 </head>
 <body>
 <h1>The Signal Lab <small>Bela → osc2laser wiring</small><span id="err"></span></h1>
 <div id="signals"><span id="empty">No signals yet. Touch a wired sensor.</span></div>
+<details id="craft"><summary>Trill Craft settings</summary>
+  <div id="craftSet"></div>
+  <p>Sent live to the Bela, like the craft-visual example. Values reset when the Bela restarts: copy the
+  "[craft] prescaler …" line from the Bela log into kCraftDefaults in render.cpp. Prescaler, bits, speed and full
+  take a new baseline, so keep hands off the pads.</p>
+</details>
 <nav id="tabs"></nav>
 <table>
   <thead><tr><th>Knob</th><th class="range">Range</th><th>Signal</th><th>Input min … max</th><th>Scale</th><th>LFO rate</th><th>Wave</th><th>Depth</th><th>Max Hz</th><th class="out">Output</th></tr></thead>
@@ -53,6 +64,23 @@ const groups = () => [...new Set(state.knobs.map(k => k.group))];
 // mirrors out_range() in signal_lab.py
 const outRange = (k, f) => { const a = k.min <= 0 && 0 <= k.max ? 0 : k.min; return [a + (k.min - a) * f, a + (k.max - a) * f]; };
 const knownSignals = () => [...new Set([...Object.keys(state.signals), ...Object.values(state.mappings).map(m => m.signal)])].sort();
+
+// name, default (kCraftDefaults in render.cpp), min, max, step
+const CRAFT = [["prescaler",1,1,8,1], ["noise",0,0,1,0.005], ["bits",12,9,16,1], ["speed",0,0,3,1],
+               ["threshold",0.05,0,1,0.005], ["full",0.3,0.01,1,0.01]];
+async function craft(setting, value) {
+  const r = await fetch("/craft", { method:"POST", body:JSON.stringify({ setting, value }) });
+  $("#err").textContent = r.ok ? "" : (await r.json()).error;
+}
+for (const [name, def, min, max, step] of CRAFT) {
+  const l = document.createElement("label");
+  l.innerHTML = `${name} <input type="number" value="${def}" min="${min}" max="${max}" step="${step}">`;
+  $("input", l).onchange = e => craft(name, +e.target.value);
+  $("#craftSet").append(l);
+}
+const cal = document.createElement("button");
+cal.className = "cap"; cal.textContent = "Calibrate"; cal.onclick = () => craft("calibrate");
+$("#craftSet").append(cal);
 
 async function post(knob, patch) {
   const m = { signal:null, in_min:0, in_max:1, scale:1, lfo:null, depth:0.25, hz_max:5, wave:"sine", ...state.mappings[knob], ...patch };

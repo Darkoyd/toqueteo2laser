@@ -16,7 +16,10 @@ HERE = Path(__file__).parent
 TEMPLATE = HERE.parent / "osc2laser/osc-senders/open-stage-control/pavillion-template.json"
 MAPPING = HERE / "mapping.json"
 SIGNAL_PORT, LASER, HTTP_PORT = 2346, ("127.0.0.1", 2345), 8000
-BELA_DISPLAY = ("192.168.7.2", 2347)  # Bela's OLED, gets the shape name on every step
+BELA_DISPLAY = ("192.168.7.2", 2347)  # Bela's OLED (shape name on every step) and live Trill Craft settings
+# /craft/<name> value ranges, mirrors kCraftMin/kCraftMax in render.cpp; None = no value (calibrate)
+CRAFT = {"prescaler": (1, 8), "noise": (0, 1), "bits": (9, 16), "speed": (0, 3),
+         "threshold": (0, 1), "full": (0.01, 1), "calibrate": None}
 SKIP = {"/laserobject": {0}}  # dropdown values a press never steps to (0 = Blank)
 VERBOSE = "-v" in sys.argv or "--verbose" in sys.argv
 LFO_TICK = 1 / 50  # ponytail: fixed 50 Hz send rate for LFO knobs, raise if fast LFOs look steppy
@@ -188,6 +191,8 @@ class Http(BaseHTTPRequestHandler):
         self.reply(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path == "/craft":
+            return self.post_craft()
         if self.path != "/map":
             return self.reply(404, {"error": "not found"})
         try:
@@ -219,6 +224,27 @@ class Http(BaseHTTPRequestHandler):
             if VERBOSE:
                 print(f"map {knob} <- {mappings[knob] if sig else 'none'}")
             MAPPING.write_text(json.dumps(mappings, indent=2, sort_keys=True) + "\n")
+        self.reply(200, {"ok": True})
+
+
+    def post_craft(self):
+        try:
+            req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            name = req["setting"]
+            if name not in CRAFT:
+                raise ValueError("setting must be one of " + ", ".join(CRAFT))
+            rng = CRAFT[name]
+            value = [] if rng is None else float(req["value"])
+            if rng and not rng[0] <= value <= rng[1]:
+                raise ValueError(f"{name} must be {rng[0]}..{rng[1]}")
+        except (ValueError, KeyError, TypeError) as e:
+            return self.reply(400, {"error": str(e)})
+        try:
+            bela.send_message(f"/craft/{name}", value)  # float: render.cpp only pops floats
+        except OSError:
+            return self.reply(502, {"error": "Bela unreachable"})
+        if VERBOSE:
+            print(f"craft {name} {value}")
         self.reply(200, {"ok": True})
 
 

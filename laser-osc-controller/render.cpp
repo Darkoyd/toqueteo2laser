@@ -23,13 +23,22 @@ const float kMinChange = 0.005f;
 // Flex tuning knobs, values recommended in the flex-visual example
 const int kPrescaler = 4;           // higher = more sensitive / more resistive material
 const float kNoiseThreshold = 0.03f;
-// Craft tuning knobs. Each pad is scaled 0..1 between kPadThreshold and its own max, which starts at
-// kPadFullTouch and grows to the strongest reading seen, so pads of different sizes all reach 1.
-// Watch "[craft] peak" (printed once a second) while touching pads to pick these.
-const int kCraftPrescaler = 1;          // Trill lib default for Craft; higher = more sensitive, for bigger pads or longer wires
-const float kCraftNoiseThreshold = 0.f; // raw readings below this are zeroed by the Craft itself
-const float kPadThreshold = 0.05f;      // DIFF reading above this = pad touched
-const float kPadFullTouch = 0.3f;       // starting max: a firm touch at least this strong reads 1
+// Craft tuning knobs, live-tunable like Bela's Trill/craft-visual example: send /craft/<name> <float> to udp :2347
+// (the Signal Lab's Craft panel does), or /craft/calibrate for a new baseline. Each change prints the full set;
+// copy it back here once the pads feel right. Each pad is scaled 0..1 between threshold and its own max, which
+// starts at full and grows to the strongest reading seen, so pads of different sizes all reach 1.
+// Watch "[craft] peak" (printed once a second) while touching pads to pick threshold and full.
+enum { kCraftPrescaler, kCraftNoise, kCraftBits, kCraftSpeed, kCraftThreshold, kCraftFull, kNumCraftSet };
+const char* kCraftSetNames[kNumCraftSet] = {"prescaler", "noise", "bits", "speed", "threshold", "full"};
+const float kCraftDefaults[kNumCraftSet] = {
+	1,     // prescaler 1..8: higher = longer charge, for bigger pads, resistive material, longer wires; lower = proximity
+	0.f,   // noise 0..1: raw readings below this are zeroed by the Craft itself, typically < 0.1
+	12,    // bits 9..16: scan resolution, more = finer but slower scan
+	0,     // speed 0..3: 0 = fastest scan, 3 = slowest and least noisy
+	0.05f, // threshold: DIFF reading above this = pad touched
+	0.3f,  // full: starting max per pad, a firm touch at least this strong reads 1
+};
+const float kCraftMin[kNumCraftSet] = {1, 0, 9, 0, 0, 0.01f}, kCraftMax[kNumCraftSet] = {8, 1, 16, 3, 1, 1};
 // Everything read in render() ends up in gIn[] and is sent as /signal/<kNames[i]>, in this order:
 // analog in 0..3, audio in L/R (piezos), digital 0..1 (buttons).
 const char* kNames[] = {"pot/0", "pot/1", "joy/x", "joy/y", "piezo/0", "piezo/1", "joy/button", "button"};
@@ -52,7 +61,9 @@ CentroidDetection gCd;
 OscSender gOsc;
 OscReceiver gOscIn;
 volatile float gIn[kNumIn]; // 0..1, written by render(), sent by readAndSend()
-volatile bool gCalibrate = false; // set by /craft/calibrate, handled in readAndSend() (I2C stays in the aux task)
+// Set by the OSC thread, applied in readAndSend() (I2C stays in the aux task). -1 = nothing pending.
+volatile bool gCalibrate = false;
+volatile float gCraftPending[kNumCraftSet];
 
 // Classic 5x7 font, ASCII 32..126, one byte per column, bit 0 = top
 const uint8_t kFont[][5] = {
@@ -141,6 +152,13 @@ void onDisplay(oscpkt::Message* msg, const char*, void*)
 		gCalibrate = true;
 		return;
 	}
+	for(int i = 0; i < kNumCraftSet; i++) {
+		float v;
+		if(msg->match(std::string("/craft/") + kCraftSetNames[i]).popFloat(v).isOkNoMoreArgs()) {
+			gCraftPending[i] = std::min(kCraftMax[i], std::max(kCraftMin[i], v));
+			return;
+		}
+	}
 	std::string text;
 	if(msg->match("/display").popStr(text).isOkNoMoreArgs()) {
 		printf("[display] %s\n", text.c_str());
@@ -157,8 +175,10 @@ void readAndSend(void*)
 	unsigned int lastTouches = 0;
 	uint32_t lastPads = 0; // bit n = Craft pad n touched (30 pads)
 	float lastPad[32] = {}; // last value sent per Craft pad
-	float padMax[32];        // strongest reading per Craft pad, see kPadFullTouch
-	std::fill(padMax, padMax + 32, kPadFullTouch);
+	float padMax[32];        // strongest reading per Craft pad, see full in kCraftDefaults
+	float cfg[kNumCraftSet]; // current Craft settings, sent to the Craft from gCraftPending on the first pass
+	std::copy(kCraftDefaults, kCraftDefaults + kNumCraftSet, cfg);
+	std::fill(padMax, padMax + 32, cfg[kCraftFull]);
 	while(!Bela_stopRequested()) {
 		gFlex.readI2C();
 		gCd.process(gFlex.rawData.data());
@@ -176,11 +196,32 @@ void readAndSend(void*)
 				sent = true;
 			}
 		}
+		bool changed = false;
+		for(int i = 0; i < kNumCraftSet; i++) {
+			float v = gCraftPending[i];
+			if(v < 0.f)
+				continue;
+			gCraftPending[i] = -1.f;
+			cfg[i] = v;
+			changed = true;
+			if(i == kCraftPrescaler)
+				gCraft.setPrescaler(v);
+			else if(i == kCraftNoise)
+				gCraft.setNoiseThreshold(v);
+			else if(i == kCraftBits || i == kCraftSpeed)
+				gCraft.setScanSettings(cfg[kCraftSpeed], cfg[kCraftBits]);
+			// prescaler and scan settings shift the raw levels, so they need a new baseline too
+			if(i != kCraftNoise && i != kCraftThreshold)
+				gCalibrate = true;
+		}
+		if(changed)
+			printf("[craft] prescaler %.0f noise %.3f bits %.0f speed %.0f threshold %.3f full %.3f\n",
+				cfg[kCraftPrescaler], cfg[kCraftNoise], cfg[kCraftBits], cfg[kCraftSpeed], cfg[kCraftThreshold], cfg[kCraftFull]);
 		if(gCalibrate) {
 			gCalibrate = false;
 			gCraft.updateBaseline(); // hands off the pads while this runs
-			std::fill(padMax, padMax + 32, kPadFullTouch);
-			printf("[craft] calibrated: new baseline, pad max reset to %.3f\n", kPadFullTouch);
+			std::fill(padMax, padMax + 32, cfg[kCraftFull]);
+			printf("[craft] calibrated: new baseline, pad max reset to %.3f\n", cfg[kCraftFull]);
 		}
 		gCraft.readI2C();
 		uint32_t pads = 0;
@@ -189,7 +230,8 @@ void readAndSend(void*)
 			// below threshold = 0, so idle pad noise isn't sent
 			float raw = gCraft.rawData[n];
 			padMax[n] = std::max(padMax[n], raw);
-			float v = raw > kPadThreshold ? (raw - kPadThreshold) / (padMax[n] - kPadThreshold) : 0.f;
+			float th = std::min(cfg[kCraftThreshold], padMax[n] * 0.99f); // keep the divisor > 0
+			float v = raw > th ? std::min(1.f, (raw - th) / (padMax[n] - th)) : 0.f;
 			if(v > 0.f)
 				pads |= 1u << n;
 			if(std::fabs(v - lastPad[n]) > kMinChange) {
@@ -251,8 +293,8 @@ bool setup(BelaContext* context, void* userData)
 	}
 	gCraft.printDetails();
 	gCraft.setMode(Trill::DIFF);
-	gCraft.setPrescaler(kCraftPrescaler);
-	gCraft.setNoiseThreshold(kCraftNoiseThreshold);
+	for(int i = 0; i < kNumCraftSet; i++)
+		gCraftPending[i] = kCraftDefaults[i]; // applied by readAndSend() on its first pass
 	gCraft.updateBaseline(); // don't touch the pads while the program starts
 
 	if(context->analogInChannels < kNumAnalog || context->audioInChannels < kNumPiezo) {
