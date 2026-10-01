@@ -23,8 +23,13 @@ const float kMinChange = 0.005f;
 // Flex tuning knobs, values recommended in the flex-visual example
 const int kPrescaler = 4;           // higher = more sensitive / more resistive material
 const float kNoiseThreshold = 0.03f;
-// ponytail: one threshold for all Craft pads, per-pad values if your pads differ in size
-const float kPadThreshold = 0.05f; // Craft DIFF reading above this = pad touched
+// Craft tuning knobs. Each pad is scaled 0..1 between kPadThreshold and its own max, which starts at
+// kPadFullTouch and grows to the strongest reading seen, so pads of different sizes all reach 1.
+// Watch "[craft] peak" (printed once a second) while touching pads to pick these.
+const int kCraftPrescaler = 1;          // Trill lib default for Craft; higher = more sensitive, for bigger pads or longer wires
+const float kCraftNoiseThreshold = 0.f; // raw readings below this are zeroed by the Craft itself
+const float kPadThreshold = 0.05f;      // DIFF reading above this = pad touched
+const float kPadFullTouch = 0.3f;       // starting max: a firm touch at least this strong reads 1
 // Everything read in render() ends up in gIn[] and is sent as /signal/<kNames[i]>, in this order:
 // analog in 0..3, audio in L/R (piezos), digital 0..1 (buttons).
 const char* kNames[] = {"pot/0", "pot/1", "joy/x", "joy/y", "piezo/0", "piezo/1", "joy/button", "button"};
@@ -47,6 +52,7 @@ CentroidDetection gCd;
 OscSender gOsc;
 OscReceiver gOscIn;
 volatile float gIn[kNumIn]; // 0..1, written by render(), sent by readAndSend()
+volatile bool gCalibrate = false; // set by /craft/calibrate, handled in readAndSend() (I2C stays in the aux task)
 
 // Classic 5x7 font, ASCII 32..126, one byte per column, bit 0 = top
 const uint8_t kFont[][5] = {
@@ -131,6 +137,10 @@ struct Oled : I2c {
 
 void onDisplay(oscpkt::Message* msg, const char*, void*)
 {
+	if(msg->match("/craft/calibrate").isOkNoMoreArgs()) {
+		gCalibrate = true;
+		return;
+	}
 	std::string text;
 	if(msg->match("/display").popStr(text).isOkNoMoreArgs()) {
 		printf("[display] %s\n", text.c_str());
@@ -147,6 +157,8 @@ void readAndSend(void*)
 	unsigned int lastTouches = 0;
 	uint32_t lastPads = 0; // bit n = Craft pad n touched (30 pads)
 	float lastPad[32] = {}; // last value sent per Craft pad
+	float padMax[32];        // strongest reading per Craft pad, see kPadFullTouch
+	std::fill(padMax, padMax + 32, kPadFullTouch);
 	while(!Bela_stopRequested()) {
 		gFlex.readI2C();
 		gCd.process(gFlex.rawData.data());
@@ -164,12 +176,20 @@ void readAndSend(void*)
 				sent = true;
 			}
 		}
+		if(gCalibrate) {
+			gCalibrate = false;
+			gCraft.updateBaseline(); // hands off the pads while this runs
+			std::fill(padMax, padMax + 32, kPadFullTouch);
+			printf("[craft] calibrated: new baseline, pad max reset to %.3f\n", kPadFullTouch);
+		}
 		gCraft.readI2C();
 		uint32_t pads = 0;
 		char addr[24];
 		for(size_t n = 0; n < gCraft.rawData.size() && n < 32; n++) {
 			// below threshold = 0, so idle pad noise isn't sent
-			float v = gCraft.rawData[n] > kPadThreshold ? std::min(1.f, gCraft.rawData[n]) : 0.f;
+			float raw = gCraft.rawData[n];
+			padMax[n] = std::max(padMax[n], raw);
+			float v = raw > kPadThreshold ? (raw - kPadThreshold) / (padMax[n] - kPadThreshold) : 0.f;
 			if(v > 0.f)
 				pads |= 1u << n;
 			if(std::fabs(v - lastPad[n]) > kMinChange) {
@@ -204,6 +224,9 @@ void readAndSend(void*)
 			auto& raw = gFlex.rawData;
 			size_t peak = std::max_element(raw.begin(), raw.end()) - raw.begin();
 			printf("[trill] peak raw ch %zu = %.4f\n", peak, raw[peak]);
+			auto& craw = gCraft.rawData;
+			size_t cpeak = std::max_element(craw.begin(), craw.end()) - craw.begin();
+			printf("[craft] peak raw pad %zu = %.4f (max %.4f)\n", cpeak, craw[cpeak], padMax[cpeak]);
 		}
 		usleep(kPollUs);
 	}
@@ -228,6 +251,8 @@ bool setup(BelaContext* context, void* userData)
 	}
 	gCraft.printDetails();
 	gCraft.setMode(Trill::DIFF);
+	gCraft.setPrescaler(kCraftPrescaler);
+	gCraft.setNoiseThreshold(kCraftNoiseThreshold);
 	gCraft.updateBaseline(); // don't touch the pads while the program starts
 
 	if(context->analogInChannels < kNumAnalog || context->audioInChannels < kNumPiezo) {
