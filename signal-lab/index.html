@@ -118,7 +118,7 @@ function renderRows() {
     tr.dataset.addr = k.addr;
     // toggle/next rows: a press (signal past the middle of min … max) flips or steps, so no scale/LFO
     const press = k.kind === "knob" ? "" : `<td colspan="5" class="range">press = ${k.kind === "toggle" ? "flip on/off" : "next value"}</td>`;
-    tr.innerHTML = `<td><b>${k.name}</b></td>
+    tr.innerHTML = `<td title="${k.addr}"><b>${k.title || k.name}</b>${k.title ? ` <small class="range">${k.name}</small>` : ""}</td>
       <td class="range">${k.min} … ${k.max}</td>
       <td>← <select class="src"></select></td>
       <td><input class="lo" type="number" step="0.01"> <button class="cap" data-f="in_min">set</button>

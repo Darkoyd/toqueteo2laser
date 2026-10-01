@@ -53,7 +53,10 @@ def load_knobs(path):
                 k = {"kind": "next", "min": float(opts[0][1]), "max": float(opts[-1][1]), "options": opts}
             if k and isinstance(addr, str) and addr.startswith("/"):
                 group, name = group_and_name(addr)
-                knobs.setdefault(addr, {"addr": addr, "group": group, "name": name, **k})
+                # display name from the template: the knob's caption (html), else a fixed label (not "%value")
+                lbl = w.get("label")
+                title = w.get("html") if isinstance(w.get("html"), str) else lbl if lbl and "%" not in lbl else ""
+                knobs.setdefault(addr, {"addr": addr, "group": group, "name": name, "title": title, **k})
             for v in w.values():
                 walk(v)
 
