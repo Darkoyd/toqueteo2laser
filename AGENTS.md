@@ -14,7 +14,8 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
   **Leave the upstream stack alone.** Only change/audit what we added: `git diff osc2laser-upstream -- osc2laser`.
   Ours: perspective + curve code in `osc-receiver/models.py` (`apply_point_perspective`, `sort_path`, `Parabola`,
   homography helpers, `AlgebraicCurve` → `Cubic`/`Conic`/`Hyperelliptic`), perspective OSC in `osc_input.py`,
-  `test_template.py`, `start.sh`, macOS dylibs, `osc-senders/open-stage-control/pavillion-template.json`.
+  `test_template.py`, `start.sh`, ILDA output fix in `laser_output.py` (y flipped `4095 - y`, since drawing is y-down
+  but ILDA/Helios is y-up; intensity `i` = 255), macOS dylibs, `osc-senders/open-stage-control/pavillion-template.json`.
 - `signal-lab/` The Signal Lab: `signal_lab.py` (router + web UI on http://127.0.0.1:8000) and `index.html`.
   Knob list and ranges come from `pavillion-template.json`; tabs are derived from knob addresses. Wiring lives in
   `mapping.json` (knob address -> signal, in_min, in_max, scale, and optional lfo signal + depth + hz_max;
