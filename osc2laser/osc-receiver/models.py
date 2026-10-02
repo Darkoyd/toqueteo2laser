@@ -388,54 +388,6 @@ class StaticStars(LaserObject):
             self.generate_stars()
         super().update()
 
-class Parabola(LaserObject):
-    def __init__(self, group=0):
-        super().__init__()
-        self.group = group
-        width = int(global_data.config['laser_output']['width'])
-        height = int(global_data.config['laser_output']['height'])
-
-        # Initialize parameters with defaults or OSC values if available
-        self.a = float(global_data.parameters.get('parabola_a', 0.0005))
-        self.b = float(global_data.parameters.get('parabola_b', height / 2))
-        self.c = float(global_data.parameters.get('parabola_c', width / 2))
-
-        self.draw_parabola()
-
-    def draw_parabola(self):
-        self.point_list = []
-        width = int(global_data.config['laser_output']['width'])
-        step = 5  # Point sampling density
-
-        for x in range(0, width + step, step):
-            # Evaluate y = a(x - c)^2 + b
-            y = self.a * ((x - self.c) ** 2) + self.b
-            blank_point = LaserPoint(x, y)
-            blank_point.set_color(0, 0, 0)
-            self.point_list.append(blank_point)
-            laser_point = LaserPoint(x, y)
-            laser_point.set_color(0, 255, 0)  # Default green
-            self.point_list.append(laser_point)
-
-    def update(self):
-        super().update()
-        needs_redraw = False
-
-        if 'parabola_a' in global_data.parameters and self.a != global_data.parameters['parabola_a']:
-            self.a = global_data.parameters['parabola_a']
-            needs_redraw = True
-
-        if 'parabola_b' in global_data.parameters and self.b != global_data.parameters['parabola_b']:
-            self.b = global_data.parameters['parabola_b']
-            needs_redraw = True
-
-        if 'parabola_c' in global_data.parameters and self.c != global_data.parameters['parabola_c']:
-            self.c = global_data.parameters['parabola_c']
-            needs_redraw = True
-
-        if needs_redraw:
-            self.draw_parabola()
-
 # ==========================================
 # HOMOGRAPHY MATH HELPERS
 # ==========================================
@@ -619,6 +571,22 @@ def generate_homography_horizon_line(M, width, height, step=50):
     return horizon_points
 
 
+def homography_overlay(obj, M, width, height):
+    """Grid lines (white) and horizon (green) of the homography plane, appended without sort_path."""
+    overlay = []
+    for line in generate_homography_grid_lines(M, width, height):
+        projected_line = obj.apply_point_perspective(line)
+        if projected_line:
+            overlay.extend(create_laser_line_with_dwells(projected_line, color_rgb=(255, 255, 255), dwell_count=20))
+
+    horizon_pts = generate_homography_horizon_line(M, width, height)
+    if horizon_pts:
+        projected_horizon = obj.apply_point_perspective(horizon_pts)
+        if projected_horizon:
+            overlay.extend(create_laser_line_with_dwells(projected_horizon, color_rgb=(0, 255, 0), dwell_count=20))
+    return overlay
+
+
 # ==========================================
 # CLASS IMPLEMENTATIONS
 # ==========================================
@@ -676,41 +644,34 @@ class AlgebraicCurve(LaserObject):
 
         projected_curve = deduplicate_points(self.apply_point_perspective(curve_points))
         final_point_list = self.sort_path(projected_curve, color_rgb=self.color)
-
-        # Grid lines and horizon, appended without sort_path
         if h[6] > 0.5:
-            for line in generate_homography_grid_lines(M, width, height):
-                projected_line = self.apply_point_perspective(line)
-                if projected_line:
-                    final_point_list.extend(
-                        create_laser_line_with_dwells(projected_line, color_rgb=(255, 255, 255), dwell_count=20)
-                    )
-
-            horizon_pts = generate_homography_horizon_line(M, width, height)
-            if horizon_pts:
-                projected_horizon = self.apply_point_perspective(horizon_pts)
-                if projected_horizon:
-                    final_point_list.extend(
-                        create_laser_line_with_dwells(projected_horizon, color_rgb=(0, 255, 0), dwell_count=20)
-                    )
-
+            final_point_list.extend(homography_overlay(self, M, width, height))
         self.point_list = final_point_list
 
 
 class Cubic(AlgebraicCurve):
-    degree, step, color = 3, 25, (0, 0, 255)
+    degree, step, color = 3, 10, (255, 255, 0)
     defaults = {'cubic_a00': 0.0, 'cubic_a10': 1.0, 'cubic_a01': 0.0, 'cubic_a20': 0.0, 'cubic_a11': 0.0,
                 'cubic_a02': 1.0, 'cubic_a30': -1.0, 'cubic_a21': 0.0, 'cubic_a12': 0.0, 'cubic_a03': 0.0}
 
 
 class Conic(AlgebraicCurve):
-    degree, step, color = 2, 25, (0, 0, 255)
+    degree, step, color = 2, 10, (255, 255, 0)
     defaults = {'conic_a00': -0.25, 'conic_a10': 0.0, 'conic_a01': 0.0,
                 'conic_a20': 1.0, 'conic_a11': 0.0, 'conic_a02': 1.0}
 
 
+class Parabola(Conic):
+    """y = a (x - h)^2 + k as a conic, so it stays a parabola whatever the knobs do (screen y points down)."""
+    defaults = {'parabola_a': 1.0, 'parabola_c': 0.0, 'parabola_b': 0.0}  # scaling, vertex x, vertex y
+
+    def base_poly(self, a):
+        s, h, k = a['parabola_a'], a['parabola_c'], a['parabola_b']
+        return {(2, 0, 0): s, (1, 0, 1): -2 * s * h, (0, 0, 2): s * h * h + k, (0, 1, 1): -1.0}
+
+
 class Hyperelliptic(AlgebraicCurve):
-    degree, step, color = 8, 25, (0, 0, 255)
+    degree, step, color = 8, 10, (255, 255, 0)
     defaults = {'hyperelliptic_a8': 0.1, 'hyperelliptic_a7': 0.0, 'hyperelliptic_a6': -2.0,
                 'hyperelliptic_a5': 0.0, 'hyperelliptic_a4': 12.0, 'hyperelliptic_a3': 0.0,
                 'hyperelliptic_a2': -20.0, 'hyperelliptic_a1': 0.0, 'hyperelliptic_a0': 8.0}
@@ -720,3 +681,86 @@ class Hyperelliptic(AlgebraicCurve):
         poly = {(k, 0, 8 - k): -a[f'hyperelliptic_a{k}'] for k in range(9)}
         poly[(0, 2, 6)] = 1.0
         return poly
+
+
+class SvgObject(LaserObject):
+    """Strokes of every path/shape in an .svg file (outlines, not fills), fitted into inner_box and seen
+    through the homography knobs like the curves. Text must be converted to paths first (Inkscape: Path >
+    Object to Path); single-stroke fonts (Inkscape Extensions > Text > Hershey Text) draw each letter once
+    instead of twice around its outline."""
+    step = 8         # output units between samples along a path (lower = denser, fewer holes, slower frame)
+    dwell_count = 10  # blank points at the start/end of each subpath
+
+    def __init__(self, filename, group=0):
+        from svgelements import SVG, Shape, Path
+        self.group = group
+        self.state = None
+        subpaths = []
+        for el in SVG.parse(filename).elements():
+            if not isinstance(el, Shape):
+                continue
+            paint = el.stroke if el.stroke is not None and el.stroke.value is not None else el.fill
+            color = (paint.red, paint.green, paint.blue) if paint is not None and paint.value is not None else (0, 255, 0)
+            for sub in Path(el).as_subpaths():
+                sub = Path(sub)
+                if sub.length() > 0:
+                    subpaths.append((color, sub))
+
+        # Sampled once, in the curves' normalized plane coordinates (inner_box = -1..1)
+        width = int(global_data.config['laser_output']['width'])
+        height = int(global_data.config['laser_output']['height'])
+        x_min, x_max, y_min, y_max = inner_box(width, height)
+        self.strokes = []  # [(color, (n, 2) array), ...]
+        if subpaths:
+            boxes = [sub.bbox() for _, sub in subpaths]
+            bx0, by0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+            bx1, by1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+            k = min((x_max - x_min) / max(bx1 - bx0, 1e-9), (y_max - y_min) / max(by1 - by0, 1e-9))
+            ox = (x_min + x_max - (bx1 - bx0) * k) / 2 - bx0 * k  # centred
+            oy = (y_min + y_max - (by1 - by0) * k) / 2 - by0 * k
+            origin, scale = np.array([width / 2.0, height / 2.0]), min(width, height) / 4.0
+            for color, sub in subpaths:
+                # ponytail: sampled before projection, so a strong zoom spreads points apart; resample after if it shows
+                n = max(2, int(sub.length() * k / self.step) + 1)
+                pts = np.asarray(sub.npoint(np.linspace(0, 1, n))) * k + (ox, oy)
+                self.strokes.append((color, (pts - origin) / scale))
+        self.update()
+
+    def update(self):
+        super().update()
+        h = [float(global_data.parameters.get(k, 0.0)) for k in AlgebraicCurve.HOMOGRAPHY]
+        state = (h, [self.get_effect_level(e) for e in AlgebraicCurve.PERSPECTIVE])
+        if state != self.state:
+            self.state = state
+            self.draw(h)
+
+    def draw(self, h):
+        width = int(global_data.config['laser_output']['width'])
+        height = int(global_data.config['laser_output']['height'])
+        x_min, x_max, y_min, y_max = inner_box(width, height)
+        origin, scale = np.array([width / 2.0, height / 2.0]), min(width, height) / 4.0
+        M = get_inverse_homography(*h[:6])
+        H = np.linalg.inv(M)  # plane -> screen (M maps screen -> plane for the curve coefficients)
+
+        # Built locally and swapped in once: the laser and preview threads both render this object
+        point_list = []
+        for color, plane in self.strokes:
+            uvw = np.c_[plane, np.ones(len(plane))] @ H.T
+            w = uvw[:, 2]
+            visible = w > 1e-6  # in front of the camera
+            screen = uvw[:, :2] / np.where(visible, w, 1.0)[:, None] * scale + origin
+            lo, hi = np.array([x_min, y_min]) - 0.5, np.array([x_max, y_max]) + 0.5  # slack: the fit touches the box edges
+            visible &= ((screen >= lo) & (screen <= hi)).all(axis=1)
+            # Break the stroke wherever it leaves inner_box or crosses the horizon
+            run = []
+            for pt, ok in zip(screen.tolist(), visible):
+                if ok:
+                    run.append(pt)
+                elif run:
+                    point_list.extend(create_laser_line_with_dwells(self.apply_point_perspective(run), color, self.dwell_count))
+                    run = []
+            if run:
+                point_list.extend(create_laser_line_with_dwells(self.apply_point_perspective(run), color, self.dwell_count))
+        if h[6] > 0.5:
+            point_list.extend(homography_overlay(self, M, width, height))
+        self.point_list = point_list or Blank().point_list  # empty if the knobs pushed everything off screen

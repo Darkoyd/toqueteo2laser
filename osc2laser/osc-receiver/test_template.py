@@ -56,9 +56,9 @@ WIDGETS = list(widgets(json.loads(TEMPLATE.read_text())))
 
 
 @pytest.fixture(autouse=True)
-def circle_visible():
+def parabola_visible():
     global_data.parameters.clear()
-    handle_osc_message('/laserobject', 5)
+    handle_osc_message('/laserobject', 1)
 
 
 @pytest.mark.parametrize('w', WIDGETS, ids=lambda w: w['address'])

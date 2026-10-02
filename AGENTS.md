@@ -12,8 +12,8 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
 
 - `osc2laser/` fork of https://github.com/oliverbyte/osc2laser (upstream `76c637a`, tagged `osc2laser-upstream`).
   **Leave the upstream stack alone.** Only change/audit what we added: `git diff osc2laser-upstream -- osc2laser`.
-  Ours: perspective + curve code in `osc-receiver/models.py` (`apply_point_perspective`, `sort_path`, `Parabola`,
-  homography helpers, `AlgebraicCurve` → `Cubic`/`Conic`/`Hyperelliptic`), perspective OSC in `osc_input.py`,
+  Ours: perspective + curve code in `osc-receiver/models.py` (`apply_point_perspective`, `sort_path`,
+  homography helpers, `AlgebraicCurve` → `Cubic`/`Conic`(→`Parabola`)/`Hyperelliptic`, `SvgObject`), perspective OSC in `osc_input.py`,
   `test_template.py`, `start.sh`, ILDA output fix in `laser_output.py` (y flipped `4095 - y`, since drawing is y-down
   but ILDA/Helios is y-up; intensity `i` = 255), macOS dylibs, `osc-senders/open-stage-control/pavillion-template.json`.
 - `signal-lab/` The Signal Lab: `signal_lab.py` (router + web UI on http://127.0.0.1:8000) and `index.html`.
@@ -65,9 +65,11 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
 ## Receiver notes
 
 - `main.py` starts the laser output + OSC threads; pygame preview runs on the main thread; shared state in `global_data.py`.
-- `/laserobject N` indexes `NOTE_LASEROBJECT_MAPPING` in `osc_input.setup()` (0–11). Objects are deep-copied from those prototypes.
+- `/laserobject N` indexes `NOTE_LASEROBJECT_MAPPING` in `osc_input.setup()`: 0 Blank, 1 Parabola, 2 Cubic, 3 Conic, 4 Hyperelliptic. Objects are deep-copied from those prototypes.
+- `/laserobject 5+` are `osc-receiver/svg/*.svg` sorted by name (`SvgObject`, needs `svgelements`). Add a matching
+  `"N: SVG name": N` entry to the template's `laserobject` dropdown. Text must be paths; single-stroke (Hershey) fonts trace cleanest.
 - Two perspective systems exist on purpose: `/effect/perspective/*` projects points, `/parameters/homography_*`
-  transforms curve coefficients (keeps samples even on screen). Both are in the template.
+  transforms curve coefficients (keeps samples even on screen) and SVG points (sampled once, projected by `inv(M)`). Both are in the template.
 - Upstream gotcha: `LaserObject.effects` is a class-level list shared by every object.
 - When refactoring drawing code, snapshot `point_list` output before/after and diff it.
   `sort_path` tie-breaks can reorder points without changing the drawing.

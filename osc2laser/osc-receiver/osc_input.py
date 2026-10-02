@@ -1,4 +1,5 @@
-from models import LaserPoint, Blank, StaticLine, StaticWave, Effect, AnimatedWave, StaticCircle, StaticPoint, StaticStars, Parabola, Cubic, Conic, Hyperelliptic
+from models import Blank, Effect, Parabola, Cubic, Conic, Hyperelliptic, SvgObject
+from pathlib import Path
 import logging
 import configparser
 import time
@@ -121,34 +122,12 @@ def process_osc_input():
         logging.info('[OSC] Successfully stopped')
 
 def setup():
-    laser_point1 = LaserPoint(0, int(global_data.config['laser_output']['height'])/2)
-    laser_point1.set_color(0, 255, 0)
-
-    laser_point2 = LaserPoint(int(global_data.config['laser_output']['width']), int(global_data.config['laser_output']['height'])/2)
-    laser_point2.set_color(0, 255, 0)
-
-    laser_point3 = LaserPoint(int(global_data.config['laser_output']['width'])/2, 0)
-    laser_point3.set_color(255, 0, 0)
-
-    laser_point4 = LaserPoint(int(global_data.config['laser_output']['width'])/2, int(global_data.config['laser_output']['height']))
-    laser_point4.set_color(255, 0, 0)
-
-    laser_point5 = LaserPoint(int(global_data.config['laser_output']['width'])/2,int(global_data.config['laser_output']['height'])/2)
-    laser_point5.set_color(0, 255, 0)
-
     global_data.NOTE_LASEROBJECT_MAPPING = [
         Blank(), # No points
-        StaticLine(laser_point1, laser_point2, 0), # Green horizontal line
-        StaticLine(laser_point3, laser_point4, 0), # Red vertical line
-        StaticWave(0), # Blue static wave
-        AnimatedWave(0), # Blue animated wave
-        StaticCircle(int(global_data.config['laser_output']['height'])/2, int(global_data.config['laser_output']['width'])/2, int(global_data.config['laser_output']['height'])/5, 0, 255, 0, 0), # Green static circle
-        StaticPoint(laser_point5,0),
-        StaticStars(), # white stars
-        Parabola(), # green parabola
+        Parabola(), # yellow parabola
         Cubic(), # yellow cubic
-        Conic(), # cyan conic
-        Hyperelliptic() # magenta hyperelliptic
-    ]
+        Conic(), # yellow conic
+        Hyperelliptic() # yellow hyperelliptic
+    ] + [SvgObject(f) for f in sorted((Path(__file__).parent / 'svg').glob('*.svg'))]  # 5+: svg/ files by name
 
 setup()
