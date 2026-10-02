@@ -1,6 +1,5 @@
 .DS_Store
 .bela-sdk/
-.nested-git-backup/
 __pycache__/
 .pytest_cache/
 .venv/
