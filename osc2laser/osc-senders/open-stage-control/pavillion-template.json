@@ -71,17 +71,13 @@
         "align": "center",
         "values": {
           "0: Blank": 0,
-          "1: Green line": 1,
-          "2: Red vertical line": 2,
-          "3: Blue static wave": 3,
-          "4: Blue animated wave": 4,
-          "5: Green static circle": 5,
-          "6: Green static point": 6,
-          "7: White stars": 7,
-          "8: Parabola": 8,
-          "9: Cubic": 9,
-          "10: Conic": 10,
-          "11: Hyperelliptic": 11
+          "1: Parabola": 1,
+          "2: Cubic": 2,
+          "3: Conic": 3,
+          "4: Hyperelliptic": 4,
+          "5: Geometria Crossover": 5,
+          "6: Pabellon": 6,
+          "7: ARQDIS": 7
         },
         "value": "",
         "default": 0,
@@ -1189,12 +1185,12 @@
         "height": 70,
         "html": "Scaling",
         "label": "%value",
-        "range": { "min": -0.002, "max": 0.002 },
-        "sensitivity": 0.5,
-        "steps": 0.0001,
-        "default": 0.0005,
+        "range": { "min": -5, "max": 5 },
+        "sensitivity": 0.05,
+        "steps": 0.01,
+        "default": 1,
         "address": "/parameters/parabola_a",
-        "decimals": 5
+        "decimals": 2
       },
       {
         "type": "text",
@@ -1206,7 +1202,7 @@
         "height": 20,
         "align": "center",
         "address": "/parameters/parabola_a",
-        "decimals": 5,
+        "decimals": 2,
         "css": "border: 1px solid #555; background: #111;",
         "value": "@{parameter_parabola_a.value}"
       },
@@ -1221,11 +1217,12 @@
         "height": 70,
         "html": "Vertex X",
         "label": "%value",
-        "range": { "min": 0, "max": 4095 },
-        "sensitivity": 1,
-        "default": 2048,
+        "range": { "min": -2, "max": 2 },
+        "sensitivity": 0.05,
+        "steps": 0.01,
+        "default": 0,
         "address": "/parameters/parabola_c",
-        "decimals": 0
+        "decimals": 2
       },
       {
         "type": "text",
@@ -1237,7 +1234,7 @@
         "height": 20,
         "align": "center",
         "address": "/parameters/parabola_c",
-        "decimals": 0,
+        "decimals": 2,
         "css": "border: 1px solid #555; background: #111;",
         "value": "@{parameter_parabola_c.value}"
       },
@@ -1252,11 +1249,12 @@
         "height": 70,
         "html": "Vertex Y",
         "label": "%value",
-        "range": { "min": 0, "max": 4095 },
-        "sensitivity": 1,
-        "default": 2048,
+        "range": { "min": -2, "max": 2 },
+        "sensitivity": 0.05,
+        "steps": 0.01,
+        "default": 0,
         "address": "/parameters/parabola_b",
-        "decimals": 0
+        "decimals": 2
       },
       {
         "type": "text",
@@ -1268,7 +1266,7 @@
         "height": 20,
         "align": "center",
         "address": "/parameters/parabola_b",
-        "decimals": 0,
+        "decimals": 2,
         "css": "border: 1px solid #555; background: #111;",
         "value": "@{parameter_parabola_b.value}"
       },

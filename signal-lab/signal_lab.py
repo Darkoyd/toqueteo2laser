@@ -127,7 +127,7 @@ def fire(addr, m, v):  # caller holds lock
     if knobs[addr]["kind"] == "next":
         label = next(lbl for lbl, val in knobs[addr]["options"] if val == out)
         try:
-            bela.send_message("/display", label.replace(": ", "\n"))  # "8: Parabola" -> number, name
+            bela.send_message("/display", label.replace(": ", "\n"))  # "1: Parabola" -> number, name
         except OSError:  # Bela unplugged: no route to 192.168.7.2, the laser still switched
             pass
     return out
@@ -276,14 +276,14 @@ def selftest():
     assert k["/effect/perspective/pitch"]["min"] < 0 and "/effect/xy_pos" not in k
     assert k["/parameters/homography_show_square"]["kind"] == "toggle"
     shapes = [o[1] for o in k["/laserobject"]["options"]]
-    assert shapes == list(range(1, 12)), shapes  # Blank skipped
+    assert shapes[:4] == [1, 2, 3, 4], shapes  # Blank skipped, 5+ are svg/ files
     knobs.update(k)
     m = {"in_min": 0.0, "in_max": 1.0}
     sq, lo = "/parameters/homography_show_square", "/laserobject"
     assert press(sq, m, 1) == 1.0 and press(sq, m, 1) is None  # held: fires once
     assert press(sq, m, 0) is None and press(sq, m, 1) == 0.0  # release, press again: flips back
     assert press(lo, m, 1) == 1 and press(lo, m, 0) is None and press(lo, m, 1) == 2
-    outputs[lo] = 11
+    outputs[lo] = shapes[-1]
     pressed[lo] = False
     assert press(lo, m, 1) == 1  # wraps past the end, skipping Blank
     assert press(lo, {"in_min": 1.0, "in_max": 0.0}, 0) is None  # inverted range: 0 is "down" but was held
