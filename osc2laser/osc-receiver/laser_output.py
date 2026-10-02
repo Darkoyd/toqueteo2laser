@@ -33,7 +33,7 @@ def process_laser_output():
     def blackout():
         point_type = HeliosPoint * 1
         helios_points = point_type()
-        helios_points[0] = HeliosPoint(0, 0, 0, 0, 0, 0)
+        helios_points[0] = HeliosPoint(0, 0, 0, 0, 0, 255)
         HeliosLib.WriteFrame(0, int(global_data.scan_rate), 0, ctypes.pointer(helios_points), 1)
 
     initialize()
@@ -52,7 +52,7 @@ def process_laser_output():
 
             i = 0
             for laser_point in optimized_point_list:
-                helios_points[i] = HeliosPoint(int(laser_point.x), int(laser_point.y), int(laser_point.r * INTENSITY_FACTOR), int(laser_point.g * INTENSITY_FACTOR), int(laser_point.b * INTENSITY_FACTOR), 0)
+                helios_points[i] = HeliosPoint(int(laser_point.x), 4095 - int(laser_point.y), int(laser_point.r * INTENSITY_FACTOR), int(laser_point.g * INTENSITY_FACTOR), int(laser_point.b * INTENSITY_FACTOR), 255)  # ILDA: y up, i unused = max
                 # print(laser_point.b)
                 if global_data.config['logging']['laser_point'] == 'yes':
                     logging.debug('[LaserOutput] LaserPoint: ' + str(laser_point))
