@@ -3,10 +3,11 @@
 Trill sensors on a Bela drive a Helios laser through the Signal Lab and osc2laser.
 
 ```
-Trill / pots / joystick / piezos -> Bela (laser-osc-controller) -> Signal Lab (Mac) -> osc2laser -> Helios DAC
+Trill / pots / joystick / piezos / pulse sensor -> Bela (laser-osc-controller) -> Signal Lab (Mac) -> osc2laser -> Helios DAC
 ```
 
-- `laser-osc-controller/` Bela project (`render.cpp`), sends sensor readings as `/signal/*` OSC.
+- `laser-osc-controller/` Bela project, runs at boot: SuperCollider (`_main.scd`) plus `trill-oled.cpp` for the Trills and OLED.
+  Sends sensor readings as `/signal/*` OSC and plays a sound per signal on the Bela's audio out.
 - `signal-lab/` maps signals onto laser knobs, web UI on http://127.0.0.1:8000.
 - `osc2laser/` fork of [oliverbyte/osc2laser](https://github.com/oliverbyte/osc2laser); our changes: `git diff osc2laser-upstream -- osc2laser`.
 

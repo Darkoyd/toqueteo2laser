@@ -1,5 +1,5 @@
 {
-  // Run from a file inside a project folder (e.g. laser-osc-controller/render.cpp).
+  // Run from a file inside a project folder (e.g. laser-osc-controller/_main.scd).
   // The folder name is used as the Bela project name.
   "version": "2.0.0",
   "tasks": [

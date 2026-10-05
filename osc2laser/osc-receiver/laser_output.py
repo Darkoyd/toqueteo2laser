@@ -52,7 +52,7 @@ def process_laser_output():
 
             i = 0
             for laser_point in optimized_point_list:
-                helios_points[i] = HeliosPoint(int(laser_point.x), 4095 - int(laser_point.y), int(laser_point.r * INTENSITY_FACTOR), int(laser_point.g * INTENSITY_FACTOR), int(laser_point.b * INTENSITY_FACTOR), 255)  # ILDA: y up, i unused = max
+                helios_points[i] = HeliosPoint(4095 - int(laser_point.x), 4095 - int(laser_point.y), int(laser_point.r * INTENSITY_FACTOR), int(laser_point.g * INTENSITY_FACTOR), int(laser_point.b * INTENSITY_FACTOR), 255)  # ILDA: y up; x mirrored on the real projection; i unused = max
                 # print(laser_point.b)
                 if global_data.config['logging']['laser_point'] == 'yes':
                     logging.debug('[LaserOutput] LaserPoint: ' + str(laser_point))

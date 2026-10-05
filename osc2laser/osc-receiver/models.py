@@ -688,8 +688,8 @@ class SvgObject(LaserObject):
     through the homography knobs like the curves. Text must be converted to paths first (Inkscape: Path >
     Object to Path); single-stroke fonts (Inkscape Extensions > Text > Hershey Text) draw each letter once
     instead of twice around its outline."""
-    step = 8         # output units between samples along a path (lower = denser, fewer holes, slower frame)
-    dwell_count = 10  # blank points at the start/end of each subpath
+    step = 16        # output units between samples along a path (lower = denser, sharper corners, slower frame)
+    dwell_count = 6   # blank points at the start/end of each subpath
 
     def __init__(self, filename, group=0):
         from svgelements import SVG, Shape, Path

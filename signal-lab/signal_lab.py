@@ -16,8 +16,9 @@ HERE = Path(__file__).parent
 TEMPLATE = HERE.parent / "osc2laser/osc-senders/open-stage-control/pavillion-template.json"
 MAPPING = HERE / "mapping.json"
 SIGNAL_PORT, LASER, HTTP_PORT = 2346, ("127.0.0.1", 2345), 8000
-BELA_DISPLAY = ("192.168.7.2", 2347)  # Bela's OLED (shape name on every step) and live Trill Craft settings
-# /craft/<name> value ranges, mirrors kCraftMin/kCraftMax in render.cpp; None = no value (calibrate)
+BELA_DISPLAY = ("192.168.7.2", 2347)  # Bela's OLED (shape name on every step) and live Trill Craft settings;
+# the ip follows wherever the signals come from (USB 192.168.7.2 or the Bela hotspot 192.168.8.2)
+# /craft/<name> value ranges, mirrors kCraftMin/kCraftMax in trill-oled.cpp; None = no value (calibrate)
 CRAFT = {"prescaler": (1, 8), "noise": (0, 1), "bits": (9, 16), "speed": (0, 3),
          "threshold": (0, 1), "full": (0.01, 1), "calibrate": None}
 SKIP = {"/laserobject": {0}}  # dropdown values a press never steps to (0 = Blank)
@@ -128,9 +129,16 @@ def fire(addr, m, v):  # caller holds lock
         label = next(lbl for lbl, val in knobs[addr]["options"] if val == out)
         try:
             bela.send_message("/display", label.replace(": ", "\n"))  # "1: Parabola" -> number, name
-        except OSError:  # Bela unplugged: no route to 192.168.7.2, the laser still switched
+        except OSError:  # Bela unplugged: no route to it, the laser still switched
             pass
     return out
+
+
+def on_signal_from(client, address, *args):
+    global bela
+    if client[0] != bela._address:  # Bela switched link (USB <-> Wi-Fi): reply on the one it uses
+        bela = SimpleUDPClient(client[0], BELA_DISPLAY[1])
+    on_signal(address, *args)
 
 
 def on_signal(address, *args):
@@ -243,7 +251,7 @@ class Http(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError) as e:
             return self.reply(400, {"error": str(e)})
         try:
-            bela.send_message(f"/craft/{name}", value)  # float: render.cpp only pops floats
+            bela.send_message(f"/craft/{name}", value)  # float: trill-oled.cpp only pops floats
         except OSError:
             return self.reply(502, {"error": "Bela unreachable"})
         if VERBOSE:
@@ -296,7 +304,7 @@ if __name__ == "__main__":
         sys.exit()
     knobs.update(load_knobs(TEMPLATE))
     disp = Dispatcher()
-    disp.map("/signal/*", on_signal)
+    disp.map("/signal/*", on_signal_from, needs_reply_address=True)
     osc = ThreadingOSCUDPServer(("0.0.0.0", SIGNAL_PORT), disp)
     threading.Thread(target=osc.serve_forever, daemon=True).start()
     threading.Thread(target=lfo_loop, daemon=True).start()

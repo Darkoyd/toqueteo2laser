@@ -1,22 +1,24 @@
-// Trill Flex + Craft, pots, joystick, piezos, buttons -> Signal Lab (signal-lab/ on the Mac), which maps each
-// /signal/<name> (0..1) to an osc2laser knob. Wire a new sensor = send one more /signal/<name>.
+// Trill Flex + Craft and the OLED, everything on I2C. A plain Linux program next to SuperCollider (_main.scd),
+// which owns the Bela audio core: run.sh builds and starts both. Trill readings go to sclang as /signal/<name>
+// (0..1); sclang plays their sounds and forwards them to the Signal Lab on the Mac.
 // Follows Bela's Trill/flex-visual example: Flex runs in DIFF mode and touches
-// are computed on the Bela with CentroidDetection; I2C is read in an auxiliary
-// task (never in render()), and OSC is sent with sendNonRt() from that task.
-#include <Bela.h>
+// are computed here with CentroidDetection.
 #include <cmath>
+#include <csignal>
 #include <algorithm>
+#include <thread>
 #include <libraries/Trill/Trill.h>
 #include <libraries/Trill/CentroidDetection.h>
-#include <libraries/OscSender/OscSender.h>
-#include <libraries/OscReceiver/OscReceiver.h>
+#include <oscpkt.hh>
 #include <I2c.h>
 #include <string>
+#include <arpa/inet.h>
+#include <sys/prctl.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-// Mac running the Signal Lab, as seen from the Bela over USB
-const char* kRemoteIp = "192.168.7.1";
-const int kRemotePort = 2346;
-const int kDisplayPort = 2347; // Signal Lab sends /display "<text>" here
+const int kSignalPort = 2346;  // sclang on this Bela (_main.scd), forwards to the Signal Lab on the same port
+const int kDisplayPort = 2347; // Signal Lab sends /display "<text>" and /craft/* here
 const unsigned int kPollUs = 12000; // ~80 Hz, same as Bela's Trill examples
 // ponytail: fixed dead band, tune if the laser jitters or feels steppy
 const float kMinChange = 0.005f;
@@ -39,31 +41,26 @@ const float kCraftDefaults[kNumCraftSet] = {
 	0.3f,  // full: starting max per pad, a firm touch at least this strong reads 1
 };
 const float kCraftMin[kNumCraftSet] = {1, 0, 9, 0, 0, 0.01f}, kCraftMax[kNumCraftSet] = {8, 1, 16, 3, 1, 1};
-// Everything read in render() ends up in gIn[] and is sent as /signal/<kNames[i]>, in this order:
-// analog in 0..3, audio in L/R (piezos), digital 0..1 (buttons).
-const char* kNames[] = {"pot/0", "pot/1", "joy/x", "joy/y", "piezo/0", "piezo/1", "joy/button", "button"};
-const int kNumAnalog = 4, kNumPiezo = 2, kNumButtons = 2;
-const int kNumIn = kNumAnalog + kNumPiezo + kNumButtons;
-const int kButtonPins[kNumButtons] = {0, 1}; // Bela digital pins, 10k pull-up to 3.3V, pressed = GND
-// Analog parts are wired between 3.3V and GND. Bela's ADC spans 0..4.096V,
-// so 3.3V reads ~0.806; tune kPotMax to what a pot turned fully up prints.
-const float kPotMax = 0.806f;
-const float kPotSmooth = 0.001f; // one-pole coefficient per analog frame, lower = smoother/slower
-// Piezos on audio in L/R: level envelope (instant attack, exponential release) 0..1
-const float kPiezoGain = 4.f;       // raise if hard hits don't reach ~1, lower if light taps max out
-const float kPiezoFloor = 0.02f;    // envelope below this (after gain) = 0, so idle hiss isn't sent
-const float kPiezoRelease = 0.9998f; // per audio sample, ~110 ms decay at 44.1 kHz; lower = snappier
+// Pots, joystick, piezos and buttons are read by SuperCollider, their tuning knobs are at the top of _main.scd.
 const int kOledAddress = 0x3C; // SSD1306 128x64, same I2C bus as the Trills
 
 Trill gFlex;
 Trill gCraft; // same I2C bus as the Flex, default address 0x30
 CentroidDetection gCd;
-OscSender gOsc;
-OscReceiver gOscIn;
-volatile float gIn[kNumIn]; // 0..1, written by render(), sent by readAndSend()
-// Set by the OSC thread, applied in readAndSend() (I2C stays in the aux task). -1 = nothing pending.
+int gSock = -1; // UDP, sends to sclang and receives on kDisplayPort
+sockaddr_in gSclang;
+volatile sig_atomic_t gStop = 0;
+// Set by the OSC thread, applied in readAndSend() (I2C stays in one thread). -1 = nothing pending.
 volatile bool gCalibrate = false;
 volatile float gCraftPending[kNumCraftSet];
+
+void sendSignal(const char* address, float v)
+{
+	oscpkt::PacketWriter pw;
+	oscpkt::Message msg(address);
+	pw.addMessage(msg.pushFloat(v));
+	sendto(gSock, pw.packetData(), pw.packetSize(), 0, (sockaddr*)&gSclang, sizeof gSclang);
+}
 
 // Classic 5x7 font, ASCII 32..126, one byte per column, bit 0 = top
 const uint8_t kFont[][5] = {
@@ -146,7 +143,7 @@ struct Oled : I2c {
 	}
 } gOled;
 
-void onDisplay(oscpkt::Message* msg, const char*, void*)
+void onDisplay(oscpkt::Message* msg)
 {
 	if(msg->match("/craft/calibrate").isOkNoMoreArgs()) {
 		gCalibrate = true;
@@ -167,7 +164,7 @@ void onDisplay(oscpkt::Message* msg, const char*, void*)
 	}
 }
 
-void readAndSend(void*)
+void readAndSend()
 {
 	// no NaN sentinel: Bela builds with -ffast-math, which assumes NaN never happens
 	float last = 0.f;
@@ -179,7 +176,7 @@ void readAndSend(void*)
 	float cfg[kNumCraftSet]; // current Craft settings, sent to the Craft from gCraftPending on the first pass
 	std::copy(kCraftDefaults, kCraftDefaults + kNumCraftSet, cfg);
 	std::fill(padMax, padMax + 32, cfg[kCraftFull]);
-	while(!Bela_stopRequested()) {
+	while(!gStop) {
 		gFlex.readI2C();
 		gCd.process(gFlex.rawData.data());
 		unsigned int touches = gCd.getNumTouches();
@@ -190,8 +187,8 @@ void readAndSend(void*)
 		if(touches) {
 			float loc = gCd.touchLocation(0); // 0..1 along the strip
 			if(!sent || std::fabs(loc - last) > kMinChange) {
-				gOsc.newMessage("/signal/flex").add(loc).sendNonRt();
-				printf("[osc] -> %s:%d /signal/flex %.3f\n", kRemoteIp, kRemotePort, loc);
+				sendSignal("/signal/flex", loc);
+				printf("[osc] /signal/flex %.3f\n", loc);
 				last = loc;
 				sent = true;
 			}
@@ -236,7 +233,7 @@ void readAndSend(void*)
 				pads |= 1u << n;
 			if(std::fabs(v - lastPad[n]) > kMinChange) {
 				snprintf(addr, sizeof addr, "/signal/craft/%zu", n);
-				gOsc.newMessage(addr).add(v).sendNonRt();
+				sendSignal(addr, v);
 				lastPad[n] = v;
 			}
 		}
@@ -247,18 +244,6 @@ void readAndSend(void*)
 					printf(" %zu", n);
 			printf("\n");
 			lastPads = pads;
-		}
-		static float lastIn[kNumIn] = {-1.f, -1.f, -1.f, -1.f, -1.f, -1.f, -1.f, -1.f}; // -1 = send on first pass
-		for(int n = 0; n < kNumIn; n++) {
-			float v = gIn[n];
-			// always send the return to 0, so a decaying piezo doesn't stick just above it
-			if(std::fabs(v - lastIn[n]) > kMinChange || (v == 0.f && lastIn[n] != 0.f)) {
-				snprintf(addr, sizeof addr, "/signal/%s", kNames[n]);
-				gOsc.newMessage(addr).add(v).sendNonRt();
-				if(n < kNumAnalog || n >= kNumAnalog + kNumPiezo) // piezos would flood the console
-					printf("[in] %s = %.3f\n", kNames[n], v);
-				lastIn[n] = v;
-			}
 		}
 		static unsigned int tick = 0;
 		if(++tick * kPollUs >= 1000000) { // once a second: strongest channel
@@ -274,11 +259,30 @@ void readAndSend(void*)
 	}
 }
 
-bool setup(BelaContext* context, void* userData)
+
+void receive()
 {
+	char buf[1024];
+	while(!gStop) {
+		ssize_t n = recv(gSock, buf, sizeof buf, 0);
+		if(n <= 0)
+			continue;
+		oscpkt::PacketReader pr(buf, n);
+		while(oscpkt::Message* msg = pr.popMessage())
+			onDisplay(msg);
+	}
+}
+
+int main()
+{
+	setvbuf(stdout, nullptr, _IOLBF, 0); // run.sh pipes our log, keep it line by line
+	prctl(PR_SET_PDEATHSIG, SIGTERM);    // stop with run.sh, so nothing keeps the I2C bus or port 2347
+	signal(SIGINT, [](int) { gStop = 1; });
+	signal(SIGTERM, [](int) { gStop = 1; });
+
 	if(gFlex.setup(1, Trill::FLEX) != 0) {
 		fprintf(stderr, "Unable to initialise Trill Flex\n");
-		return false;
+		return 1;
 	}
 	gFlex.printDetails();
 	gFlex.setMode(Trill::DIFF);
@@ -289,7 +293,7 @@ bool setup(BelaContext* context, void* userData)
 
 	if(gCraft.setup(1, Trill::CRAFT) != 0) {
 		fprintf(stderr, "Unable to initialise Trill Craft\n");
-		return false;
+		return 1;
 	}
 	gCraft.printDetails();
 	gCraft.setMode(Trill::DIFF);
@@ -297,49 +301,26 @@ bool setup(BelaContext* context, void* userData)
 		gCraftPending[i] = kCraftDefaults[i]; // applied by readAndSend() on its first pass
 	gCraft.updateBaseline(); // don't touch the pads while the program starts
 
-	if(context->analogInChannels < kNumAnalog || context->audioInChannels < kNumPiezo) {
-		fprintf(stderr, "Need %d analog and %d audio inputs, project has %u and %u\n",
-			kNumAnalog, kNumPiezo, context->analogInChannels, context->audioInChannels);
-		return false;
-	}
-	for(int pin : kButtonPins)
-		pinMode(context, 0, pin, INPUT);
-
 	// the display is optional: the rest works without it
 	if(gOled.setup(1, kOledAddress))
 		gOled.show("Signal Lab\nwaiting");
 	else
 		fprintf(stderr, "No OLED at %#x, display disabled\n", kOledAddress);
-	gOscIn.setup(kDisplayPort, onDisplay);
 
-	gOsc.setup(kRemotePort, kRemoteIp);
-	Bela_runAuxiliaryTask(readAndSend);
-	return true;
-}
-
-void render(BelaContext* context, void* userData)
-{
-	// analog is sampled here (audio thread); smoothing kills ADC jitter before the dead band
-	static float smooth[kNumAnalog];
-	for(unsigned int f = 0; f < context->analogFrames; f++)
-		for(int n = 0; n < kNumAnalog; n++)
-			smooth[n] += kPotSmooth * (analogRead(context, f, n) - smooth[n]);
-	for(int n = 0; n < kNumAnalog; n++)
-		gIn[n] = std::min(1.f, smooth[n] / kPotMax);
-
-	static float env[kNumPiezo];
-	for(int n = 0; n < kNumPiezo; n++) {
-		for(unsigned int f = 0; f < context->audioFrames; f++) {
-			float a = std::fabs(audioRead(context, f, n));
-			env[n] = a > env[n] ? a : env[n] * kPiezoRelease;
-		}
-		float pz = std::min(1.f, env[n] * kPiezoGain);
-		gIn[kNumAnalog + n] = pz > kPiezoFloor ? pz : 0.f;
+	gSock = socket(AF_INET, SOCK_DGRAM, 0);
+	sockaddr_in local = {};
+	local.sin_family = AF_INET;
+	local.sin_addr.s_addr = htonl(INADDR_ANY);
+	local.sin_port = htons(kDisplayPort);
+	if(bind(gSock, (sockaddr*)&local, sizeof local) != 0) {
+		perror("Unable to listen on udp :2347");
+		return 1;
 	}
+	gSclang.sin_family = AF_INET;
+	gSclang.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	gSclang.sin_port = htons(kSignalPort);
+	std::thread(receive).detach();
 
-	// ponytail: no debounce beyond the ~12 ms send poll, add a hold time if presses double-fire
-	for(int n = 0; n < kNumButtons; n++)
-		gIn[kNumAnalog + kNumPiezo + n] = digitalRead(context, context->digitalFrames - 1, kButtonPins[n]) ? 0.f : 1.f;
+	readAndSend();
+	return 0;
 }
-
-void cleanup(BelaContext* context, void* userData) {}

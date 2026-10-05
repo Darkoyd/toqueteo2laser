@@ -45,7 +45,7 @@
 <details id="craft"><summary>Trill Craft settings</summary>
   <div id="craftSet"></div>
   <p>Sent live to the Bela, like the craft-visual example. Values reset when the Bela restarts: copy the
-  "[craft] prescaler …" line from the Bela log into kCraftDefaults in render.cpp. Prescaler, bits, speed and full
+  "[craft] prescaler …" line from the Bela log into kCraftDefaults in trill-oled.cpp. Prescaler, bits, speed and full
   take a new baseline, so keep hands off the pads.</p>
 </details>
 <nav id="tabs"></nav>
@@ -65,7 +65,7 @@ const groups = () => [...new Set(state.knobs.map(k => k.group))];
 const outRange = (k, f) => { const a = k.min <= 0 && 0 <= k.max ? 0 : k.min; return [a + (k.min - a) * f, a + (k.max - a) * f]; };
 const knownSignals = () => [...new Set([...Object.keys(state.signals), ...Object.values(state.mappings).map(m => m.signal)])].sort();
 
-// name, default (kCraftDefaults in render.cpp), min, max, step
+// name, default (kCraftDefaults in trill-oled.cpp), min, max, step
 const CRAFT = [["prescaler",1,1,8,1], ["noise",0,0,1,0.005], ["bits",12,9,16,1], ["speed",0,0,3,1],
                ["threshold",0.05,0,1,0.005], ["full",0.3,0.01,1,0.01]];
 async function craft(setting, value) {
