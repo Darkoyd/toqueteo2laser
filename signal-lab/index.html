@@ -13,6 +13,8 @@
   #signals { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; min-height:40px; }
   .sig { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:4px 8px; width:120px; }
   .sig b { font-weight:600; font-size:12px; }
+  .sig.quiet b { color:var(--dim); }
+  .sig .mute { float:right; border:none; padding:0; font-size:12px; line-height:1.4; }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:3px; }
   .bar i { display:block; height:100%; background:var(--accent); width:0; }
   #empty { color:var(--dim); }
@@ -40,7 +42,8 @@
 </style>
 </head>
 <body>
-<h1>The Signal Lab <small>Bela → osc2laser wiring</small><span id="err"></span></h1>
+<h1>The Signal Lab <small>Bela → osc2laser wiring</small>
+  <button class="cap" id="reset" title="unbind every knob">Reset signals</button><span id="err"></span></h1>
 <div id="signals"><span id="empty">No signals yet. Touch a wired sensor.</span></div>
 <details id="craft"><summary>Trill Craft settings</summary>
   <div id="craftSet"></div>
@@ -54,7 +57,7 @@
   <tbody id="rows"></tbody>
 </table>
 <script>
-let state = { signals:{}, knobs:[], mappings:{}, outputs:{} };
+let state = { signals:{}, knobs:[], mappings:{}, outputs:{}, muted:[], audible:[] };
 let tab = null;
 try { tab = localStorage.getItem("tab"); } catch {}
 const $ = (s, el=document) => el.querySelector(s);
@@ -81,6 +84,21 @@ for (const [name, def, min, max, step] of CRAFT) {
 const cal = document.createElement("button");
 cal.className = "cap"; cal.textContent = "Calibrate"; cal.onclick = () => craft("calibrate");
 $("#craftSet").append(cal);
+
+$("#reset").onclick = async () => {
+  if (!confirm("Clear all signal bindings?")) return;
+  const r = await fetch("/reset", { method:"POST" });
+  $("#err").textContent = r.ok ? "" : "reset failed";
+  if (r.ok) { state.mappings = {}; renderTabs(); renderRows(); }
+};
+
+// mute = no Bela sound for that signal; it still drives its knobs
+async function mute(signal, muted) {
+  const r = await fetch("/mute", { method:"POST", body:JSON.stringify({ signal, muted }) });
+  const body = await r.json();
+  $("#err").textContent = r.ok ? "" : body.error;
+  if (r.ok) { Object.assign(state, body); updateLive(); }
+}
 
 async function post(knob, patch) {
   const m = { signal:null, in_min:0, in_max:1, scale:1, lfo:null, depth:0.25, hz_max:5, wave:"sine", ...state.mappings[knob], ...patch };
@@ -166,11 +184,18 @@ function updateLive() {
     if (!el) {
       el = document.createElement("div");
       el.className = "sig"; el.id = "sig:" + n;
-      el.innerHTML = `<b></b><div class="bar"><i></i></div>`;
+      el.innerHTML = `<b></b><button class="cap mute"></button><div class="bar"><i></i></div>`;
       $("b", el).textContent = n;
+      $(".mute", el).onclick = () => mute(n, !state.muted.includes(n));
       $("#signals").append(el);
     }
     $("i", el).style.width = pct(state.signals[n], 0, 1);
+    // the Bela only sounds signals wired to a knob and not muted
+    const muted = state.muted.includes(n), sounds = state.audible.includes(n);
+    el.classList.toggle("quiet", !sounds);
+    el.title = sounds ? "sounds on the Bela when it moves" : muted ? "muted on the Bela" : "silent on the Bela: not wired to a knob";
+    $(".mute", el).textContent = muted ? "🔇" : "🔈";
+    $(".mute", el).title = muted ? "unmute its Bela sound" : "mute its Bela sound";
   }
   for (const tr of $("#rows").children) {
     const k = state.knobs.find(k => k.addr === tr.dataset.addr);

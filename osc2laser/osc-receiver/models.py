@@ -655,6 +655,12 @@ class Cubic(AlgebraicCurve):
                 'cubic_a02': 1.0, 'cubic_a30': -1.0, 'cubic_a21': 0.0, 'cubic_a12': 0.0, 'cubic_a03': 0.0}
 
 
+class Cubic2(Cubic):
+    """A second cubic with its own knobs, so both shapes keep their settings."""
+    defaults = {'cubic2_a00': -0.4, 'cubic2_a10': 1.0, 'cubic2_a01': 0.0, 'cubic2_a20': 1.4, 'cubic2_a11': -2.4,
+                'cubic2_a02': 0.8, 'cubic2_a30': -1.4, 'cubic2_a21': 0.4, 'cubic2_a12': 1.4, 'cubic2_a03': 1.4}
+
+
 class Conic(AlgebraicCurve):
     degree, step, color = 2, 10, (255, 255, 0)
     defaults = {'conic_a00': -0.25, 'conic_a10': 0.0, 'conic_a01': 0.0,

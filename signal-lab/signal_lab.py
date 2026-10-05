@@ -15,9 +15,12 @@ from pythonosc.udp_client import SimpleUDPClient
 HERE = Path(__file__).parent
 TEMPLATE = HERE.parent / "osc2laser/osc-senders/open-stage-control/pavillion-template.json"
 MAPPING = HERE / "mapping.json"
+MUTED = HERE / "muted.json"  # signals whose Bela sound is muted
 SIGNAL_PORT, LASER, HTTP_PORT = 2346, ("127.0.0.1", 2345), 8000
 BELA_DISPLAY = ("192.168.7.2", 2347)  # Bela's OLED (shape name on every step) and live Trill Craft settings;
 # the ip follows wherever the signals come from (USB 192.168.7.2 or the Bela hotspot 192.168.8.2)
+# sclang sends signals to who says /hello; its args are the signals that may sound (see audible())
+BELA_HELLO = [("192.168.7.2", SIGNAL_PORT), ("192.168.8.2", SIGNAL_PORT)]
 # /craft/<name> value ranges, mirrors kCraftMin/kCraftMax in trill-oled.cpp; None = no value (calibrate)
 CRAFT = {"prescaler": (1, 8), "noise": (0, 1), "bits": (9, 16), "speed": (0, 3),
          "threshold": (0, 1), "full": (0.01, 1), "calibrate": None}
@@ -83,6 +86,8 @@ signals = {}  # name -> last raw value
 outputs = {}  # knob addr -> last value sent
 pressed = {}  # toggle/next addr -> is its signal held down
 mappings = json.loads(MAPPING.read_text()) if MAPPING.exists() else {}
+muted = set(json.loads(MUTED.read_text())) if MUTED.exists() else set()
+hello_now = threading.Event()  # set when audible() changes, so the Bela hears it before the next 1 s hello
 knobs = {}
 laser = SimpleUDPClient(*LASER)
 bela = SimpleUDPClient(*BELA_DISPLAY)
@@ -164,6 +169,28 @@ def on_signal(address, *args):
             print(f"in {name} {v:.4f}" + (" -> " + ", ".join(sent) if sent else ""))
 
 
+def audible():  # caller holds lock
+    """Signals the Bela may play a sound for: wired to a knob (as its signal or LFO rate) and not muted."""
+    wired = {s for addr, m in mappings.items() if addr in knobs for s in (m["signal"], m.get("lfo")) if s}
+    return sorted(wired - muted)
+
+
+def hello_loop():
+    # every second, on both links: whichever reaches the Bela tells sclang where to send the signals
+    # and which of them may sound
+    clients = [SimpleUDPClient(*a) for a in BELA_HELLO]
+    while True:
+        with lock:
+            names = audible()
+        for c in clients:
+            try:
+                c.send_message("/hello", names)
+            except OSError:  # that link is down
+                pass
+        hello_now.wait(1)
+        hello_now.clear()
+
+
 def lfo_loop():
     # main signal = centre, depth = swing as a fraction of the range, lfo signal 0..1 -> 0..hz_max
     phases, last = {}, time.monotonic()
@@ -197,13 +224,22 @@ class Http(BaseHTTPRequestHandler):
             return self.reply(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
         if self.path == "/state":
             with lock:
-                return self.reply(200, {"signals": signals, "knobs": list(knobs.values()),
-                                        "mappings": mappings, "outputs": outputs})
+                return self.reply(200, {"signals": signals, "knobs": list(knobs.values()), "mappings": mappings,
+                                        "outputs": outputs, "muted": sorted(muted), "audible": audible()})
         self.reply(404, {"error": "not found"})
 
     def do_POST(self):
         if self.path == "/craft":
             return self.post_craft()
+        if self.path == "/mute":
+            return self.post_mute()
+        if self.path == "/reset":
+            with lock:
+                mappings.clear()
+                outputs.clear()
+                MAPPING.write_text("{}\n")
+            hello_now.set()
+            return self.reply(200, {"ok": True})
         if self.path != "/map":
             return self.reply(404, {"error": "not found"})
         try:
@@ -235,7 +271,25 @@ class Http(BaseHTTPRequestHandler):
             if VERBOSE:
                 print(f"map {knob} <- {mappings[knob] if sig else 'none'}")
             MAPPING.write_text(json.dumps(mappings, indent=2, sort_keys=True) + "\n")
+        hello_now.set()
         self.reply(200, {"ok": True})
+
+    def post_mute(self):
+        try:
+            req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            sig, mute = req["signal"], req["muted"]
+            if not isinstance(sig, str) or not isinstance(mute, bool):
+                raise ValueError("signal must be a name, muted true/false")
+        except (ValueError, KeyError, TypeError) as e:
+            return self.reply(400, {"error": str(e)})
+        with lock:
+            (muted.add if mute else muted.discard)(sig)
+            MUTED.write_text(json.dumps(sorted(muted)) + "\n")
+            if VERBOSE:
+                print(f"{'mute' if mute else 'unmute'} {sig}")
+            body = {"muted": sorted(muted), "audible": audible()}
+        hello_now.set()
+        self.reply(200, body)
 
 
     def post_craft(self):
@@ -284,7 +338,7 @@ def selftest():
     assert k["/effect/perspective/pitch"]["min"] < 0 and "/effect/xy_pos" not in k
     assert k["/parameters/homography_show_square"]["kind"] == "toggle"
     shapes = [o[1] for o in k["/laserobject"]["options"]]
-    assert shapes[:4] == [1, 2, 3, 4], shapes  # Blank skipped, 5+ are svg/ files
+    assert shapes[:4] == [1, 2, 3, 4], shapes  # Blank skipped, 6+ are svg/ files
     knobs.update(k)
     m = {"in_min": 0.0, "in_max": 1.0}
     sq, lo = "/parameters/homography_show_square", "/laserobject"
@@ -295,6 +349,12 @@ def selftest():
     pressed[lo] = False
     assert press(lo, m, 1) == 1  # wraps past the end, skipping Blank
     assert press(lo, {"in_min": 1.0, "in_max": 0.0}, 0) is None  # inverted range: 0 is "down" but was held
+    mappings.clear()
+    muted.clear()
+    mappings.update({"/effect/perspective/pitch": {"signal": "pot/0", "lfo": "joy/x"}, lo: {"signal": "button"},
+                     "/gone": {"signal": "pot/1"}})
+    muted.add("joy/x")
+    assert audible() == ["button", "pot/0"], audible()  # LFO rate counts; muted and unknown knobs don't
     print("selftest ok,", len(k), "knobs")
 
 
@@ -308,6 +368,7 @@ if __name__ == "__main__":
     osc = ThreadingOSCUDPServer(("0.0.0.0", SIGNAL_PORT), disp)
     threading.Thread(target=osc.serve_forever, daemon=True).start()
     threading.Thread(target=lfo_loop, daemon=True).start()
+    threading.Thread(target=hello_loop, daemon=True).start()
     print(f"{len(knobs)} knobs, signals on udp :{SIGNAL_PORT} -> {LASER[0]}:{LASER[1]}")
     print(f"UI http://127.0.0.1:{HTTP_PORT}")
     try:

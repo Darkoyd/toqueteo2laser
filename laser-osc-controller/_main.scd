@@ -1,13 +1,16 @@
 // laser-osc-controller: SuperCollider owns the Bela audio core. It reads the pots, joystick, piezos, pulse sensor and buttons,
 // gets the Trill signals from trill-oled (C++, I2C), sends every /signal/<name> (0..1) to the Signal Lab on the Mac
-// and plays a sound for each signal whenever it moves (Bela audio out).
+// and plays a sound for each signal whenever it moves (Bela audio out), if the Signal Lab says it may (see ~audible).
 // Start it with run.sh (make run does), which also builds and starts trill-oled.
 
 // Tuning knobs, sensors need tuning on the real hardware
-// Signal Lab on the Mac, as seen from the Bela over USB and over the Bela Wi-Fi hotspot; sent to both,
-// so either link works (the Signal Lab replies on whichever it hears from)
-~remotes = [NetAddr("192.168.7.1", 2346), NetAddr("192.168.8.1", 2346)];
 ~signalPort = 2346; // trill-oled sends /signal/flex and /signal/craft/<n> here
+// The Signal Lab on the Mac says /hello here every second (over USB or the Bela Wi-Fi hotspot);
+// signals go to whoever said it last, nowhere once it has been quiet this long
+~helloTimeout = 3;
+// /hello's args: the signals that may sound (wired to a knob in the Signal Lab and not muted there).
+// Kept after the Signal Lab goes quiet; none until it first says hello.
+~audible = [];
 ~minChange = 0.005; // ponytail: fixed dead band, tune if the laser jitters or feels steppy (kMinChange in trill-oled.cpp)
 ~pollHz = 80;       // input reads per second, same as trill-oled
 // Pots and joystick on Analog In 0..3, wired between 3.3V and GND. Bela's ADC spans 0..4.096V,
@@ -18,7 +21,7 @@
 ~piezoGain = 4;         // raise if hard hits don't reach ~1, lower if light taps max out
 ~piezoFloor = 0.02;     // envelope below this (after gain) = 0, so idle hiss isn't sent
 ~piezoRelease = 0.9998; // per audio sample, ~110 ms decay at 44.1 kHz; lower = snappier
-~buttonPins = [0, 1];   // Bela digital pins, 10k pull-up to 3.3V, pressed = GND
+~buttonPins = [0, 1, 2]; // Bela digital pins, 10k pull-up to 3.3V, pressed = GND
 // PulseSensor (pulsesensor.com) on 3.3V, signal on Analog In 4. heart/beat jumps to 1 on every beat and falls back
 // to 0; heart/bpm is the median of the last 5 beat intervals, ~bpmRange mapped to 0..1, 0 after 3 s without a beat.
 // Every beat prints "[heart] <bpm> bpm, pulse <height>": set ~heartFloor between the height with a finger on
@@ -27,7 +30,7 @@
 ~heartRelease = 0.25;  // seconds heart/beat takes to fall from 1 to 0
 ~bpmRange = [40, 160]; // heart/bpm 0..1
 // analog in 0..3, audio in L/R (piezos), pulse sensor, digital pins (buttons), sent as /signal/<name> in this order
-~names = ["pot/0", "pot/1", "joy/x", "joy/y", "piezo/0", "piezo/1", "heart/beat", "joy/button", "button"];
+~names = ["pot/0", "pot/1", "joy/x", "joy/y", "piezo/0", "piezo/1", "heart/beat", "joy/button", "button", "horn"];
 
 // Sounds: one per signal, restarted by every move and fading out `release` seconds after the last one.
 // The signal's value (0..1) bends the pitch up to an octave. [oscillator, overtone ratio, release, midi note]
@@ -44,6 +47,9 @@
 	"flex" ->       [\tri,   2,    0.4, 48],
 	"heart/beat" -> [\sine,  2,    0.15, 40], // kick: the falling beat drops the pitch an octave
 ];
+// The horn button (digital 2) plays this sample on every press instead of a tone, whether wired in the Signal Lab or not.
+~hornFile = "sounds/airhorn.wav".resolveRelative; // wav/aiff only, scsynth can't read mp3
+~hornVolume = 0.5;
 ~silent = Set["heart/bpm"]; // sent without a sound, it changes on every beat (heart/beat sounds those)
 ~soundFor = { |name|
 	~sounds[name] ?? {
@@ -75,6 +81,10 @@ s.waitForBoot {
 			Out.ar(0, (sig * env * amp).dup);
 		}).add;
 	};
+	SynthDef(\sample, { |buf, amp = 0.5|
+		Out.ar(0, PlayBuf.ar(2, buf, BufRateScale.kr(buf), doneAction: Done.freeSelf) * amp);
+	}).add;
+	~horn = Buffer.read(s, ~hornFile);
 	SynthDef(\limiter, { ReplaceOut.ar(0, Limiter.ar(In.ar(0, 2), 0.8)) }).add;
 	SynthDef(\inputs, { |potMax, potSmooth, piezoGain, piezoFloor, piezoRelease, heartFloor, heartRelease, pollHz|
 		var pots = 4.collect { |n| OnePole.ar(AnalogIn.ar(n), exp(-1 / (potSmooth * SampleRate.ir))) / potMax };
@@ -94,22 +104,27 @@ s.waitForBoot {
 	s.sync;
 
 	~last = Dictionary.new;    // name -> last value sent
-	~playing = Dictionary.new; // name -> Synth while its sound rings
+	~playing = Dictionary.new; // name -> [Synth, Main.elapsedTime when its envelope ends and it frees itself]
 	~quiet = true; // no sounds while the pot smoothing settles after start
 	SystemClock.sched(0.5, { ~quiet = false; nil });
 	~signal = { |name, v|
-		// try: with no Wi-Fi dongle 192.168.8.1 is unreachable and sendMsg throws
-		~remotes.do { |r| try { r.sendMsg("/signal/" ++ name, v) } };
-		if(~quiet.not and: { ~silent.includes(name).not }) { ~sound.(name, v) };
+		// try: in the seconds before the timeout a gone Mac can be unreachable and sendMsg throws
+		if(~remote.notNil and: { Main.elapsedTime - ~helloAt < ~helloTimeout }) {
+			try { ~remote.sendMsg("/signal/" ++ name, v) }
+		};
+		if(name == "horn") { if(~quiet.not and: { v == 1 }) { Synth(\sample, [buf: ~horn, amp: ~hornVolume]) } } {
+			if(~quiet.not and: { ~audible.includesEqual(name) and: { ~silent.includes(name).not } }) { ~sound.(name, v) };
+		};
 	};
 	~sound = { |name, v|
-		var syn = ~playing[name];
-		if(syn.notNil) { syn.set(\val, v, \t_move, 1) } {
-			var p = ~soundFor.(name);
-			syn = Synth(p[0], [freq: p[3].midicps, ratio: p[1], release: p[2], val: v, amp: ~volume]);
-			syn.onFree { if(~playing[name] === syn) { ~playing.removeAt(name) } };
-			~playing[name] = syn;
+		var p = ~soundFor.(name), now = Main.elapsedTime, cur = ~playing[name];
+		// Restart the ringing synth only while its end is 50 ms+ away, else start a new one. Not onFree: a lost
+		// /n_end kept dead synths here, and every later move failed with "/n_set Node not found" and stayed silent.
+		if(cur.notNil and: { now < (cur[1] - 0.05) }) { cur[0].set(\val, v, \t_move, 1) } {
+			cur = [Synth(p[0], [freq: p[3].midicps, ratio: p[1], release: p[2], val: v, amp: ~volume]), 0];
+			~playing[name] = cur;
 		};
+		cur[1] = now + 0.005 + p[2]; // Env.perc attack + release, counted from this move
 	};
 
 	OSCdef(\inputs, { |msg|
@@ -148,11 +163,21 @@ s.waitForBoot {
 	if(thisProcess.openUDPPort(~signalPort).not) { "[sc] can't listen on udp :%, no Trill signals".format(~signalPort).error };
 	thisProcess.addOSCRecvFunc({ |msg, time, addr, port|
 		var path = msg[0].asString;
-		if(port == ~signalPort and: { path.beginsWith("/signal/") }) { ~signal.(path.drop(8), msg[1]) };
+		if(port == ~signalPort) {
+			if(path.beginsWith("/signal/")) { ~signal.(path.drop(8), msg[1]) };
+			if(path == "/hello") {
+				var names = msg[1..].collect(_.asString); // sorted by the Signal Lab
+				if(~remote.isNil or: { ~remote.ip != addr.ip }) { "[sc] signals -> %:%".format(addr.ip, ~signalPort).postln };
+				if(names != ~audible) { "[sc] sounds: %".format(if(names.isEmpty) { "none" } { names.join(" ") }).postln };
+				~remote = NetAddr(addr.ip, ~signalPort);
+				~helloAt = Main.elapsedTime;
+				~audible = names;
+			};
+		};
 	});
 
 	Synth.tail(s, \limiter);
 	Synth(\inputs, [potMax: ~potMax, potSmooth: ~potSmooth, piezoGain: ~piezoGain, piezoFloor: ~piezoFloor,
 		piezoRelease: ~piezoRelease, heartFloor: ~heartFloor, heartRelease: ~heartRelease, pollHz: ~pollHz]);
-	"[sc] ready: signals -> %".format(~remotes.collect { |r| "%:%".format(r.ip, r.port) }).postln;
+	"[sc] ready, waiting for the Signal Lab's /hello on udp :%".format(~signalPort).postln;
 };

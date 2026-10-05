@@ -1,4 +1,4 @@
-from models import Blank, Effect, Parabola, Cubic, Conic, Hyperelliptic, SvgObject
+from models import Blank, Effect, Parabola, Cubic, Cubic2, Conic, Hyperelliptic, SvgObject
 from pathlib import Path
 import logging
 import configparser
@@ -127,7 +127,8 @@ def setup():
         Parabola(), # yellow parabola
         Cubic(), # yellow cubic
         Conic(), # yellow conic
-        Hyperelliptic() # yellow hyperelliptic
-    ] + [SvgObject(f) for f in sorted((Path(__file__).parent / 'svg').glob('*.svg'))]  # 5+: svg/ files by name
+        Hyperelliptic(), # yellow hyperelliptic
+        Cubic2() # yellow cubic, own knobs
+    ] + [SvgObject(f) for f in sorted((Path(__file__).parent / 'svg').glob('*.svg'))]  # 6+: svg/ files by name
 
 setup()
