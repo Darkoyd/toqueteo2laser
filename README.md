@@ -1,4 +1,4 @@
-# Laser Stuff
+# toqueteo2laser
 
 Touch, turn, tap or breathe on a box of sensors and a laser draws and bends curves on the wall, while the Mac plays a
 sound for every sensor you move. Trill sensors, pots, a joystick, piezos and a pulse sensor on a
