@@ -1,12 +1,12 @@
 # Laser Stuff
 
 Trill sensors on a Bela send generic signals to the Signal Lab on the Mac, which maps them onto osc2laser knobs;
-osc2laser drives a Helios laser DAC. The Bela also plays a sound per signal on its audio out whenever the signal moves,
+osc2laser drives a Helios laser DAC. SuperCollider on the Mac plays a sound per signal whenever the signal moves,
 if the signal is wired to a knob in the Signal Lab and not muted there.
 
 ```
 Trill Flex/Craft --I2C--> trill-oled --udp 127.0.0.1:2346--> sclang (_main.scd) --/signal/* udp <mac>:2346--> signal-lab --OSC 127.0.0.1:2345--> osc2laser receiver --USB--> Helios DAC
-pots, joystick, piezos, pulse sensor, buttons --> scsynth (Bela audio core) --^    \--> sounds --> Bela audio out
+pots, joystick, piezos, pulse sensor, buttons --> scsynth (Bela audio core) --^                          \--udp 127.0.0.1:2348--> sounds.scd (sclang on the Mac) --> Mac audio out
 Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------------------------------------------------------------------^
 ```
 
@@ -19,24 +19,28 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
   `test_template.py`, `start.sh`, ILDA output fix in `laser_output.py` (y flipped `4095 - y`, since drawing is y-down
   but ILDA/Helios is y-up; x flipped `4095 - x`, the projection came out mirrored; intensity `i` = 255), macOS dylibs, `osc-senders/open-stage-control/pavillion-template.json`.
 - `signal-lab/` The Signal Lab: `signal_lab.py` (router + web UI on http://127.0.0.1:8000) and `index.html`.
-  Knob list and ranges come from `pavillion-template.json`; tabs are derived from knob addresses. Wiring lives in
+  Knob list and ranges come from `pavillion-template.json` (`/parameters/<object>_*` knobs only for objects in its `/laserobject` dropdown, plus homography); tabs are derived from knob addresses. Wiring lives in
   `mapping.json` (knob address -> signal, in_min, in_max, scale, and optional lfo signal + depth + hz_max;
   LFO knobs are sent by a 50 Hz loop with the main signal as the centre). Signals register themselves on their first message.
   Template toggles and dropdowns are targets too: a signal rising past the middle of in_min..in_max flips the toggle
   or steps the dropdown (`SKIP` lists values never stepped to, e.g. `/laserobject` 0 Blank).
-  Each signal chip has a mute button for its Bela sound (`POST /mute`, saved in `muted.json`; it still drives its knobs).
+  Each signal chip has a mute button for its sound (`POST /mute`, saved in `muted.json`; it still drives its knobs).
+  Page layout: signals in the left column grouped Audio / I2C / Digital / Analog by name pattern (`TYPES` in `index.html`;
+  a new signal name needs a pattern there or it lands in "Other"), knob rows of the current tab on the right.
+  `sounds.scd` (sclang from `/Applications/SuperCollider.app`, started by `start.sh`) gets every signal plus `/hello` on udp `:2348`
+  and plays the sounds on the Mac (moved off the Bela, which had no CPU to spare). Samples in `signal-lab/sounds/`.
 - `laser-osc-controller/` Bela project, runs at boot. Folder name = Bela project name. Bela runs `run.sh`, which builds
   `trill-oled.cpp` (into `build/`, when the source is newer) and starts it, then `sclang _main.scd`.
   Only one program can own the Bela audio core, so SuperCollider owns it and `trill-oled` is a plain Linux program (no `Bela.h`).
   - `_main.scd` SuperCollider: reads pots, joystick, piezos, pulse sensor and buttons (`AnalogIn`/`SoundIn`/`DigitalIn` → `SendReply`),
-    receives the Trill signals on udp `:2346`, forwards every `/signal/<name>` to the Mac and plays its sound if it's in `~audible`.
+    receives the Trill signals on udp `:2346`, forwards every `/signal/<name>` to the Mac. No sounds on the Bela.
   - `trill-oled.cpp` Trill Flex + Craft + OLED on I2C, sends `/signal/*` to sclang, listens on udp `:2347`.
 - `.bela-sdk/` Bela headers for IntelliSense (gitignored). Has no Trill/OscSender libs, so compile on the board.
 - `.vscode/tasks.json` Bela sync/build/run over ssh, receiver, Open Stage Control, tests.
 
 ## Commands
 
-- Everything: `./start.sh` (receiver + Signal Lab, log lines prefixed `[osc2laser]` / `[signal-lab]`, Ctrl-C stops both; quiet by default,
+- Everything: `./start.sh` (receiver + Signal Lab + `sounds.scd`, log lines prefixed `[osc2laser]` / `[signal-lab]` / `[sound]`, Ctrl-C stops all; quiet by default,
   `-v` logs every signal in/out plus the receiver's `osc_server_*` logging via a temp copy of its config)
 - Receiver: `osc2laser/osc-receiver/start.sh` (uses `osc-receiver/.venv`, Python 3.11, made with uv)
 - Signal Lab: `osc2laser/osc-receiver/.venv/bin/python signal-lab/signal_lab.py` (`--selftest` runs its asserts)
@@ -59,9 +63,10 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
   starts hostapd and its own dhcpd (`/etc/dhcp/dhcpd-wlan0.conf`), which gives the Mac `192.168.8.1`
   (same scheme as USB: Bela `.7.2`, Mac `.7.1`). The Signal Lab sends `/hello` every second to the Bela's `:2346` on both
   links; `_main.scd` sends signals only to whoever said it last, and to nobody after `~helloTimeout` s of quiet
-  (sending to a gone Mac made each `sendMsg` throw and pinned sclang's CPU). `/hello`'s args are the signals that may sound
+  (sending to a gone Mac made each `sendMsg` throw and pinned sclang's CPU). A new or returning hello resends every input.
+  `/hello` also goes to `sounds.scd`; its args are the signals that may sound
   (`audible()`: wired to a knob as signal or LFO rate, not muted), also sent right away when wiring or mutes change;
-  sclang keeps them in `~audible` (`[sc] sounds: …` log line), empty until the first hello. The Signal Lab replies (`/display`, `/craft`)
+  `sounds.scd` keeps them in `~audible` (`[sound] sounds: …` log line), empty until the first hello. The Bela ignores them. The Signal Lab replies (`/display`, `/craft`)
   to whichever address the signals come from. Over Wi-Fi: `ssh root@192.168.8.2`.
 
 ## Hardware
@@ -77,15 +82,15 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
   PulseSensor on 3.3V, signal on Analog In 4 → `heart/beat` (1 on each beat, falls to 0 in `~heartRelease`) and
   `heart/bpm` (median of 5 beats, `~bpmRange` 40..160 → 0..1, 0 after 3 s without a beat, no sound; `[heart]` log line per beat);
   buttons on digital 0 (joystick SW), 1 and 2, 10k pull-up to 3.3V, pressed = GND → `joy/button`, `button`, `horn` (1 = pressed).
-  `horn` plays `sounds/airhorn.wav` (`~hornFile`, `~hornVolume`; scsynth reads wav/aiff, not mp3) on every press, wired in the Signal Lab or not.
+  `horn` plays `signal-lab/sounds/airhorn.wav` (`~hornFile`, `~hornVolume`; scsynth reads wav/aiff, not mp3) on every press, wired in the Signal Lab or not.
 - SSD1306 128x64 OLED on I2C bus 1 `0x3C`, optional. Bela listens on udp `:2347` for `/display "<text>"`
   (`\n` = new line, lines ≤ 10 chars drawn double size). The Signal Lab sends the shape name on every `/laserobject` step.
-- Sounds: `~sounds` in `_main.scd`, one per signal (oscillator, overtone ratio, release, midi note); Craft pad n = n-th
+- Sounds: `~sounds` in `signal-lab/sounds.scd`, one per signal (oscillator, overtone ratio, release, midi note); Craft pad n = n-th
   note of A minor pentatonic. Every move restarts the sound, the value bends its pitch up to an octave. `~volume` per sound, limiter on the sum.
   Only signals in `~audible` sound, so unconnected (floating) inputs stay quiet unless wired to a knob.
 - Tuning knobs: Trill consts at the top of `trill-oled.cpp` (`kPrescaler`, `kNoiseThreshold`, `kCraftDefaults`, `kMinChange`),
   analog/piezo ones at the top of `_main.scd` (`~minChange`, `~potMax`, `~potSmooth`, `~piezoGain`, `~piezoFloor`, `~piezoRelease`,
-  `~heartFloor`, `~heartRelease`, `~bpmRange`).
+  `~heartFloor`, `~heartRelease`, `~bpmRange`). `kVerbose` / `~verbose` print every value (floods the Bela's journal, costs CPU).
   Keep them; sensors need tuning on the real hardware.
 - `trill-oled` builds with `-ffast-math`, so no NaN sentinels. Bela SuperCollider is 3.12 (Bela fork).
 - Receiver config: `osc-receiver/config_laser1.txt` (driver `libHeliosLaserDAC.dylib`, OSC `0.0.0.0:2345`).

@@ -38,6 +38,42 @@ class LaserPoint():
         return ('X:' + str(self.x) + ', Y:' + str(self.y) + ', R:' + str(self.r) + ', G:' + str(self.g) + ', B:' + str(self.b) + ', Blank: ' + str(self.is_blank()))
 
 
+# Perspective effects (/effect/perspective/*) and homography knobs (/parameters/homography_*), in this order
+PERSPECTIVE = ('PERSPECTIVE_PITCH', 'PERSPECTIVE_YAW', 'PERSPECTIVE_ROLL',
+               'PERSPECTIVE_TX', 'PERSPECTIVE_TY', 'PERSPECTIVE_TZ', 'PERSPECTIVE_SHOW_SQUARE')
+HOMOGRAPHY = ('homography_pitch', 'homography_yaw', 'homography_roll',
+              'homography_tx', 'homography_ty', 'homography_tz', 'homography_show_square')
+
+
+def frame():
+    """Output width, height, centre x, y and the scale of the normalized plane (inner_box = -1..1)."""
+    width = int(global_data.config['laser_output']['width'])
+    height = int(global_data.config['laser_output']['height'])
+    return width, height, width / 2.0, height / 2.0, min(width, height) / 4.0
+
+
+def lp(x, y, color_rgb=(0, 0, 0)):
+    """LaserPoint at int(x), int(y), blank unless given a color."""
+    pt = LaserPoint(int(x), int(y))
+    pt.set_color(*color_rgb)
+    return pt
+
+
+def blank_dwell(x, y, count):
+    return [lp(x, y) for _ in range(count)]  # separate objects: effects move points in place
+
+
+def rotation(pitch, yaw, roll):
+    """3D Euler rotation matrix Rz @ Ry @ Rx."""
+    cx, sx = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    cz, sz = np.cos(roll), np.sin(roll)
+    Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+    Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+    Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+    return Rz @ Ry @ Rx
+
+
 class LaserObject():    
     point_list = []
     effects = []
@@ -65,24 +101,13 @@ class LaserObject():
         return default
 
     def apply_point_perspective(self, raw_points):
-        # Fetch perspective parameters from the effects list
-        pitch = self.get_effect_level('PERSPECTIVE_PITCH', 0.0)
-        yaw = self.get_effect_level('PERSPECTIVE_YAW', 0.0)
-        roll = self.get_effect_level('PERSPECTIVE_ROLL', 0.0)
-        tx = self.get_effect_level('PERSPECTIVE_TX', 0.0)
-        ty = self.get_effect_level('PERSPECTIVE_TY', 0.0)
-        tz = self.get_effect_level('PERSPECTIVE_TZ', 0.0)
-        show_square = self.get_effect_level('PERSPECTIVE_SHOW_SQUARE', 0.0)
+        pitch, yaw, roll, tx, ty, tz, show_square = (self.get_effect_level(e) for e in PERSPECTIVE)
 
         # Skip heavy math if the plane hasn't been moved AND we don't need the square
         if all(v == 0.0 for v in [pitch, yaw, roll, tx, ty, tz]) and show_square < 0.5:
             return raw_points
 
-        width = int(global_data.config['laser_output']['width'])
-        height = int(global_data.config['laser_output']['height'])
-        x_origin = width / 2.0
-        y_origin = height / 2.0
-        scale = min(width, height) / 4.0
+        width, height, x_origin, y_origin, scale = frame()
 
         # Copy raw points so we don't permanently modify the original list
         points_to_transform = list(raw_points)
@@ -110,16 +135,7 @@ class LaserObject():
             # Close the square
             points_to_transform.append((x_min, y_min))
 
-        # Build 3D Euler Rotation Matrix
-        cx, sx = np.cos(pitch), np.sin(pitch)
-        cy, sy = np.cos(yaw), np.sin(yaw)
-        cz, sz = np.cos(roll), np.sin(roll)
-
-        Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
-        Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
-        Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
-        R = Rz @ Ry @ Rx
-
+        R = rotation(pitch, yaw, roll)
         T = np.array([tx, ty, tz - 1.0])  # Object-local rotation, pushed in front of camera
 
         x_min, x_max, y_min, y_max = inner_box(width, height)
@@ -147,11 +163,8 @@ class LaserObject():
 
     def sort_path(self, raw_points, color_rgb):
         if not raw_points:
-            width = int(global_data.config['laser_output']['width'])
-            height = int(global_data.config['laser_output']['height'])
-            fallback = LaserPoint(int(width / 2.0), int(height / 2.0))
-            fallback.set_color(0, 0, 0)
-            return [fallback]
+            _, _, x_origin, y_origin, _ = frame()
+            return [lp(x_origin, y_origin)]
 
         pts_array = np.array(raw_points, dtype=float)
         n_points = len(pts_array)
@@ -160,12 +173,8 @@ class LaserObject():
         current_idx = 0
         visited[current_idx] = True
         
-        sorted_points = []
         current_pt = pts_array[current_idx]
-        
-        pt = LaserPoint(int(current_pt[0]), int(current_pt[1]))
-        pt.set_color(*color_rgb)
-        sorted_points.append(pt)
+        sorted_points = [lp(*current_pt, color_rgb)]
 
         jump_threshold_sq = 22500 
         dwell_count = 20
@@ -182,19 +191,8 @@ class LaserObject():
             next_pt = pts_array[next_idx]
 
             if best_dist_sq > jump_threshold_sq:
-                for _ in range(dwell_count):
-                    off_current = LaserPoint(int(current_pt[0]), int(current_pt[1]))
-                    off_current.set_color(0, 0, 0)
-                    sorted_points.append(off_current)
-                
-                for _ in range(dwell_count):
-                    off_next = LaserPoint(int(next_pt[0]), int(next_pt[1]))
-                    off_next.set_color(0, 0, 0)
-                    sorted_points.append(off_next)
-
-            pt = LaserPoint(int(next_pt[0]), int(next_pt[1]))
-            pt.set_color(*color_rgb)
-            sorted_points.append(pt)
+                sorted_points += blank_dwell(*current_pt, dwell_count) + blank_dwell(*next_pt, dwell_count)
+            sorted_points.append(lp(*next_pt, color_rgb))
 
             current_pt = next_pt
 
@@ -393,15 +391,7 @@ class StaticStars(LaserObject):
 # ==========================================
 def get_inverse_homography(pitch, yaw, roll, tx, ty, tz):
     """Compute the inverse Homography matrix M from 6 spatial parameters."""
-    cx, sx = np.cos(pitch), np.sin(pitch)
-    cy, sy = np.cos(yaw), np.sin(yaw)
-    cz, sz = np.cos(roll), np.sin(roll)
-
-    # 3D Rotation matrices
-    Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
-    Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
-    Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
-    R = Rz @ Ry @ Rx
+    R = rotation(pitch, yaw, roll)
 
     # Construct standard projection Homography (Z=0 plane mapped through camera)
     # Note: We add 1.0 to tz so that tz=0 defaults to a neutral Z-distance scale of 1.0
@@ -462,128 +452,49 @@ def deduplicate_points(points, min_dist=5.0):
             filtered.append((x2, y2))
     return filtered
 
-def generate_homography_grid_lines(M, width, height, step=50):
-    x_origin = width / 2.0
-    y_origin = height / 2.0
-    scale = min(width, height) / 4.0
+# Grid of the homography plane: its square's edges at u = +-0.5 and v = +-0.5, as lines (a, b, c): a u + b v + c = 0
+GRID_LINES = [np.array(l) for l in ([1.0, 0.0, 0.5], [1.0, 0.0, -0.5], [0.0, 1.0, 0.5], [0.0, 1.0, -0.5])]
+HORIZON = [np.array([0.0, 0.0, 1.0])]  # the plane's line at infinity: M.T @ (0, 0, 1) = M[2]
+
+
+def generate_homography_lines(M, base_lines, step=50):
+    """Points of each plane line seen on screen (M maps screen -> plane), clipped to inner_box."""
+    width, height, x_origin, y_origin, scale = frame()
     x_min, x_max, y_min, y_max = inner_box(width, height)
-    
-    base_lines = [
-        np.array([1.0, 0.0,  0.5]),
-        np.array([1.0, 0.0, -0.5]),
-        np.array([0.0, 1.0,  0.5]),
-        np.array([0.0, 1.0, -0.5])
-    ]
-    
-    MT = M.T
-    grid_lines = []
-
+    lines = []
     for l in base_lines:
-        l_prime = MT @ l
-        a, b, c = l_prime[0], l_prime[1], l_prime[2]
+        a, b, c = M.T @ l
         line_points = []
-
+        # Sample along the dominant axis for even point spacing
         if abs(b) >= abs(a):
-            if abs(b) < 1e-6: continue
+            if abs(b) < 1e-6: continue  # at infinity (an untilted plane's horizon)
             for x in range(x_min, x_max + step, step):
-                u = (x - x_origin) / scale
-                v = -(a * u + c) / b
-                y_val = v * scale + y_origin
+                y_val = -(a * (x - x_origin) / scale + c) / b * scale + y_origin
                 if y_min <= y_val <= y_max:
                     line_points.append((x, int(y_val)))
         else:
-            if abs(a) < 1e-6: continue
             for y in range(y_min, y_max + step, step):
-                v = (y - y_origin) / scale
-                u = -(b * v + c) / a
-                x_val = u * scale + x_origin
+                x_val = -(b * (y - y_origin) / scale + c) / a * scale + x_origin
                 if x_min <= x_val <= x_max:
                     line_points.append((int(x_val), y))
-        
         if line_points:
-            grid_lines.append(line_points)
+            lines.append(line_points)
+    return lines
 
-    return grid_lines
 
 def create_laser_line_with_dwells(points, color_rgb, dwell_count=25):
-    """Converts ordered 2D points into LaserPoints with blanking dwell at start and end."""
+    """Ordered 2D points as LaserPoints, with a blank dwell at both ends (galvos move with the beam off)."""
     if not points:
         return []
-
-    laser_pts = []
-    start_x, start_y = points[0]
-    end_x, end_y = points[-1]
-
-    # Blank dwell at the start (gives galvo time to move to start position with laser off)
-    for _ in range(dwell_count):
-        pt = LaserPoint(int(start_x), int(start_y))
-        pt.set_color(0, 0, 0)
-        laser_pts.append(pt)
-
-    # Active visible path points
-    for x, y in points:
-        pt = LaserPoint(int(x), int(y))
-        pt.set_color(*color_rgb)
-        laser_pts.append(pt)
-
-    # Blank dwell at the end (turns laser off before next move)
-    for _ in range(dwell_count):
-        pt = LaserPoint(int(end_x), int(end_y))
-        pt.set_color(0, 0, 0)
-        laser_pts.append(pt)
-
-    return laser_pts
-
-def generate_homography_horizon_line(M, width, height, step=50):
-    x_origin = width / 2.0
-    y_origin = height / 2.0
-    scale = min(width, height) / 4.0
-    x_min, x_max, y_min, y_max = inner_box(width, height)
-
-    # Extract line coefficients directly from the 3rd row of matrix M
-    a = M[2, 0]
-    b = M[2, 1]
-    c = M[2, 2]
-
-    # If both a and b are nearly 0, the plane is untilted and the horizon is at infinity
-    if abs(a) < 1e-6 and abs(b) < 1e-6:
-        return []
-
-    # Convert normalized line coefficients to pixel-space equation: A*x + B*y + C = 0
-    A = a
-    B = b
-    C = c * scale - a * x_origin - b * y_origin
-
-    horizon_points = []
-
-    # Sample along the dominant axis to ensure continuous, even point spacing
-    if abs(B) >= abs(A):
-        for x in range(x_min, x_max + step, step):
-            y_val = -(A * x + C) / B
-            if y_min <= y_val <= y_max:
-                horizon_points.append((x, int(y_val)))
-    else:
-        for y in range(y_min, y_max + step, step):
-            x_val = -(B * y + C) / A
-            if x_min <= x_val <= x_max:
-                horizon_points.append((int(x_val), y))
-
-    return horizon_points
+    return blank_dwell(*points[0], dwell_count) + [lp(x, y, color_rgb) for x, y in points] + blank_dwell(*points[-1], dwell_count)
 
 
-def homography_overlay(obj, M, width, height):
+def homography_overlay(obj, M):
     """Grid lines (white) and horizon (green) of the homography plane, appended without sort_path."""
     overlay = []
-    for line in generate_homography_grid_lines(M, width, height):
-        projected_line = obj.apply_point_perspective(line)
-        if projected_line:
-            overlay.extend(create_laser_line_with_dwells(projected_line, color_rgb=(255, 255, 255), dwell_count=20))
-
-    horizon_pts = generate_homography_horizon_line(M, width, height)
-    if horizon_pts:
-        projected_horizon = obj.apply_point_perspective(horizon_pts)
-        if projected_horizon:
-            overlay.extend(create_laser_line_with_dwells(projected_horizon, color_rgb=(0, 255, 0), dwell_count=20))
+    for base_lines, color in ((GRID_LINES, (255, 255, 255)), (HORIZON, (0, 255, 0))):
+        for line in generate_homography_lines(M, base_lines):
+            overlay.extend(create_laser_line_with_dwells(obj.apply_point_perspective(line), color, dwell_count=20))
     return overlay
 
 
@@ -594,11 +505,6 @@ def homography_overlay(obj, M, width, height):
 class AlgebraicCurve(LaserObject):
     """Curve poly(x, y) = 0 in normalized screen space, seen through the homography knobs.
     Subclasses set degree, step (sampling density), color and defaults (OSC parameters of base_poly)."""
-    HOMOGRAPHY = ('homography_pitch', 'homography_yaw', 'homography_roll',
-                  'homography_tx', 'homography_ty', 'homography_tz', 'homography_show_square')
-    PERSPECTIVE = ('PERSPECTIVE_PITCH', 'PERSPECTIVE_YAW', 'PERSPECTIVE_ROLL',
-                   'PERSPECTIVE_TX', 'PERSPECTIVE_TY', 'PERSPECTIVE_TZ', 'PERSPECTIVE_SHOW_SQUARE')
-
     def __init__(self, group=0):
         self.group = group
         self.state = None
@@ -611,18 +517,14 @@ class AlgebraicCurve(LaserObject):
     def update(self):
         super().update()
         a = {k: float(global_data.parameters.get(k, d)) for k, d in self.defaults.items()}
-        h = [float(global_data.parameters.get(k, 0.0)) for k in self.HOMOGRAPHY]
-        state = (a, h, [self.get_effect_level(e) for e in self.PERSPECTIVE])
+        h = [float(global_data.parameters.get(k, 0.0)) for k in HOMOGRAPHY]
+        state = (a, h, [self.get_effect_level(e) for e in PERSPECTIVE])
         if state != self.state:
             self.state = state
             self.draw(a, h)
 
     def draw(self, a, h):
-        width = int(global_data.config['laser_output']['width'])
-        height = int(global_data.config['laser_output']['height'])
-        x_origin = width / 2.0
-        y_origin = height / 2.0
-        scale = min(width, height) / 4.0
+        width, height, x_origin, y_origin, scale = frame()
         x_min, x_max, y_min, y_max = inner_box(width, height)
 
         M = get_inverse_homography(*h[:6])
@@ -645,7 +547,7 @@ class AlgebraicCurve(LaserObject):
         projected_curve = deduplicate_points(self.apply_point_perspective(curve_points))
         final_point_list = self.sort_path(projected_curve, color_rgb=self.color)
         if h[6] > 0.5:
-            final_point_list.extend(homography_overlay(self, M, width, height))
+            final_point_list.extend(homography_overlay(self, M))
         self.point_list = final_point_list
 
 
@@ -695,10 +597,12 @@ class SvgObject(LaserObject):
     Object to Path); single-stroke fonts (Inkscape Extensions > Text > Hershey Text) draw each letter once
     instead of twice around its outline."""
     step = 16        # output units between samples along a path (lower = denser, sharper corners, slower frame)
-    dwell_count = 6   # blank points at the start/end of each subpath
+    dwell_count = 12  # blank points at the start/end of each subpath: galvos settle after a jump with the beam off
+    corner_dwell = 4  # lit repeats at sharp corners and stroke ends, else the galvos round corners (B reads as 6)
+    corner_angle = 45 # degrees of turn that count as a corner
 
     def __init__(self, filename, group=0):
-        from svgelements import SVG, Shape, Path
+        from svgelements import SVG, Shape, Path, Move
         self.group = group
         self.state = None
         subpaths = []
@@ -713,8 +617,7 @@ class SvgObject(LaserObject):
                     subpaths.append((color, sub))
 
         # Sampled once, in the curves' normalized plane coordinates (inner_box = -1..1)
-        width = int(global_data.config['laser_output']['width'])
-        height = int(global_data.config['laser_output']['height'])
+        width, height, x_origin, y_origin, scale = frame()
         x_min, x_max, y_min, y_max = inner_box(width, height)
         self.strokes = []  # [(color, (n, 2) array), ...]
         if subpaths:
@@ -724,27 +627,39 @@ class SvgObject(LaserObject):
             k = min((x_max - x_min) / max(bx1 - bx0, 1e-9), (y_max - y_min) / max(by1 - by0, 1e-9))
             ox = (x_min + x_max - (bx1 - bx0) * k) / 2 - bx0 * k  # centred
             oy = (y_min + y_max - (by1 - by0) * k) / 2 - by0 * k
-            origin, scale = np.array([width / 2.0, height / 2.0]), min(width, height) / 4.0
             for color, sub in subpaths:
                 # ponytail: sampled before projection, so a strong zoom spreads points apart; resample after if it shows
-                n = max(2, int(sub.length() * k / self.step) + 1)
-                pts = np.asarray(sub.npoint(np.linspace(0, 1, n))) * k + (ox, oy)
-                self.strokes.append((color, (pts - origin) / scale))
+                # Per segment, so every vertex is hit exactly (sampling the whole path evenly cuts the corners)
+                pts = [np.asarray(sub[0].end if isinstance(sub[0], Move) else sub.first_point)]  # as_subpaths keeps Move.start = previous stroke's end
+                for seg in sub:
+                    if not isinstance(seg, Move) and seg.length() > 0:
+                        n = max(1, int(seg.length() * k / self.step))
+                        pts.extend(np.asarray(seg.npoint(np.linspace(0, 1, n + 1)))[1:])
+                pts = np.asarray(pts) * k + (ox, oy)
+                self.strokes.append((color, (self.with_corner_dwell(pts) - (x_origin, y_origin)) / scale))
         self.update()
+
+    def with_corner_dwell(self, pts):
+        """Repeats the ends and every point where the path turns more than corner_angle."""
+        d = np.diff(pts, axis=0)
+        a, b = d[:-1], d[1:]
+        cos = (a * b).sum(axis=1) / np.maximum(np.hypot(*a.T) * np.hypot(*b.T), 1e-12)
+        repeats = np.ones(len(pts), dtype=int)
+        repeats[1:-1][cos < np.cos(np.radians(self.corner_angle))] = self.corner_dwell
+        repeats[[0, -1]] = self.corner_dwell
+        return np.repeat(pts, repeats, axis=0)
 
     def update(self):
         super().update()
-        h = [float(global_data.parameters.get(k, 0.0)) for k in AlgebraicCurve.HOMOGRAPHY]
-        state = (h, [self.get_effect_level(e) for e in AlgebraicCurve.PERSPECTIVE])
+        h = [float(global_data.parameters.get(k, 0.0)) for k in HOMOGRAPHY]
+        state = (h, [self.get_effect_level(e) for e in PERSPECTIVE])
         if state != self.state:
             self.state = state
             self.draw(h)
 
     def draw(self, h):
-        width = int(global_data.config['laser_output']['width'])
-        height = int(global_data.config['laser_output']['height'])
+        width, height, x_origin, y_origin, scale = frame()
         x_min, x_max, y_min, y_max = inner_box(width, height)
-        origin, scale = np.array([width / 2.0, height / 2.0]), min(width, height) / 4.0
         M = get_inverse_homography(*h[:6])
         H = np.linalg.inv(M)  # plane -> screen (M maps screen -> plane for the curve coefficients)
 
@@ -754,7 +669,7 @@ class SvgObject(LaserObject):
             uvw = np.c_[plane, np.ones(len(plane))] @ H.T
             w = uvw[:, 2]
             visible = w > 1e-6  # in front of the camera
-            screen = uvw[:, :2] / np.where(visible, w, 1.0)[:, None] * scale + origin
+            screen = uvw[:, :2] / np.where(visible, w, 1.0)[:, None] * scale + (x_origin, y_origin)
             lo, hi = np.array([x_min, y_min]) - 0.5, np.array([x_max, y_max]) + 0.5  # slack: the fit touches the box edges
             visible &= ((screen >= lo) & (screen <= hi)).all(axis=1)
             # Break the stroke wherever it leaves inner_box or crosses the horizon
@@ -768,5 +683,5 @@ class SvgObject(LaserObject):
             if run:
                 point_list.extend(create_laser_line_with_dwells(self.apply_point_perspective(run), color, self.dwell_count))
         if h[6] > 0.5:
-            point_list.extend(homography_overlay(self, M, width, height))
+            point_list.extend(homography_overlay(self, M))
         self.point_list = point_list or Blank().point_list  # empty if the knobs pushed everything off screen

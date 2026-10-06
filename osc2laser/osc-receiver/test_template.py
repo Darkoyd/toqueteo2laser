@@ -89,3 +89,14 @@ def test_widget_is_handled(w):
             pytest.fail(f'receiver has no handler for {addr}')
 
         get_optimized_point_list()  # must render without raising
+
+
+def test_svg_hits_and_dwells_on_corners(tmp_path):
+    from models import SvgObject
+    import numpy as np
+    f = tmp_path / 'l.svg'
+    f.write_text('<svg xmlns="http://www.w3.org/2000/svg"><path stroke="#0f0" fill="none" d="M0 0 L0 100 L100 100 M300 0 L400 0"/></svg>')
+    (_, l), (_, bar) = SvgObject(f).strokes
+    _, counts = np.unique(l.round(9), axis=0, return_counts=True)
+    assert sorted(counts)[-3:] == [SvgObject.corner_dwell] * 3  # both ends and the L's corner, exactly on the vertex
+    assert np.allclose(bar[0], bar[SvgObject.corner_dwell - 1]) and bar[0][0] > l[-1][0]  # starts at its own M, not the previous end

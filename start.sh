@@ -1,5 +1,5 @@
 #!/bin/bash
-# Starts the osc2laser receiver and the Signal Lab; every log line is prefixed with its app. Ctrl-C stops both.
+# Starts the osc2laser receiver, the Signal Lab and its sounds (SuperCollider); every log line is prefixed with its app. Ctrl-C stops all.
 # -v / --verbose: Signal Lab logs every signal in/out and the receiver logs its OSC handling; without it both are quiet.
 # The receiver runs on a temp copy of its config (-c, default config_laser1.txt) with the [logging] switches set.
 cd "$(dirname "$0")"
@@ -24,5 +24,6 @@ receiver_args+=(-c "$cfg")
 
 osc2laser/osc-receiver/start.sh "${receiver_args[@]}" 2>&1 | sed -l 's/^/[osc2laser]  /' &
 osc2laser/osc-receiver/.venv/bin/python signal-lab/signal_lab.py ${lab_args[@]+"${lab_args[@]}"} 2>&1 | sed -l 's/^/[signal-lab] /' &
+/Applications/SuperCollider.app/Contents/MacOS/sclang -D signal-lab/sounds.scd 2>&1 | sed -l 's/^/[sound]      /' &
 # ponytail: if one app dies the other keeps running, check the prefixes; Ctrl-C and restart
 wait

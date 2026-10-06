@@ -67,7 +67,7 @@
     {
       "label": "osc2laser: open-stage-control",
       "type": "shell",
-      "command": "/Applications/open-stage-control.app/Contents/MacOS/open-stage-control --send 127.0.0.1:2345 --load \"osc2laser/osc-senders/open-stage-control/Open Stage Control Template.json\"",
+      "command": "/Applications/open-stage-control.app/Contents/MacOS/open-stage-control --send 127.0.0.1:2345 --load \"osc2laser/osc-senders/open-stage-control/pavillion-template.json\"",
       "isBackground": true,
       "problemMatcher": []
     },

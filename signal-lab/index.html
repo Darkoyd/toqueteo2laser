@@ -10,63 +10,119 @@
   body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; }
   h1 { font-size:18px; margin:0 0 12px; }
   h1 small { color:var(--dim); font-weight:normal; }
-  #signals { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; min-height:40px; }
-  .sig { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:4px 8px; width:120px; }
+  main { display:grid; grid-template-columns:340px minmax(0, 1fr); gap:16px; align-items:start; }
+  /* left column: signals by type */
+  #side { position:sticky; top:16px; max-height:calc(100vh - 32px); overflow:auto; display:flex; flex-direction:column; gap:10px; }
+  #signals { display:flex; flex-direction:column; gap:10px; }
+  #empty { color:var(--dim); margin:0; }
+  .type { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 10px 10px; }
+  .type summary { cursor:pointer; font-weight:600; padding:2px 0 8px; }
+  .type summary small { color:var(--dim); font-weight:normal; font-size:12px; margin-left:4px; }
+  .list { display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:6px; }
+  .list:empty::before { content:"none yet"; color:var(--dim); font-size:12px; }
+  .sig { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:4px 8px; }
   .sig b { font-weight:600; font-size:12px; }
   .sig.quiet b { color:var(--dim); }
   .sig .mute { float:right; border:none; padding:0; font-size:12px; line-height:1.4; }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:3px; }
   .bar i { display:block; height:100%; background:var(--accent); width:0; }
-  #empty { color:var(--dim); }
+  #craft { margin-top:10px; padding-top:6px; border-top:1px solid var(--line); }
+  #craft summary { cursor:pointer; font-size:13px; }
+  #craft div { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-top:8px; }
+  #craft label { color:var(--dim); font-size:12px; }
+  #craft p { color:var(--dim); font-size:12px; margin:8px 0 0; }
+  /* right column: knobs of the current tab, one two-line row each */
   #tabs { display:flex; flex-wrap:wrap; gap:2px; border-bottom:1px solid var(--line); }
   #tabs button { background:none; border:1px solid transparent; border-bottom:none; color:var(--dim); padding:6px 12px; border-radius:6px 6px 0 0; cursor:pointer; font:inherit; }
   #tabs button.on { background:var(--panel); border-color:var(--line); color:var(--fg); }
   #tabs button.mapped::after { content:" ●"; color:var(--accent); }
-  table { width:100%; border-collapse:collapse; background:var(--panel); }
-  td, th { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  th { text-align:left; font-weight:600; font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
-  td.range { color:var(--dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
-  td.out { width:30%; }
-  td.out span { font-variant-numeric:tabular-nums; color:var(--dim); font-size:12px; }
+  #rows { background:var(--panel); border:1px solid var(--line); border-top:none; border-radius:0 0 6px 6px; container-type:inline-size; }
+  .knob { display:grid; grid-template-columns:180px minmax(0, 1fr); gap:8px 20px; padding:12px 14px;
+          border-bottom:1px solid var(--line); border-left:3px solid transparent; }
+  .knob:last-child { border-bottom:none; }
+  .knob.wired { border-left-color:var(--accent); }
+  .knob .id small { color:var(--dim); }
+  .knob .range { color:var(--dim); font-size:12px; font-variant-numeric:tabular-nums; margin:2px 0 6px; }
+  .out { display:flex; align-items:center; gap:8px; }
+  .out .bar { flex:1; margin:0; }
+  .out span { font-variant-numeric:tabular-nums; color:var(--dim); font-size:12px; white-space:nowrap; }
+  .ctl { display:flex; flex-direction:column; gap:8px; }
+  .line { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; min-height:28px; }
+  .f { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .f > small { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .f:first-child > small { min-width:5.5em; } /* lines up the signal and LFO-rate selects */
+  .line.off .f:not(:first-child) { opacity:.4; } /* no LFO signal: depth, wave and Hz do nothing */
+  .line.press { color:var(--dim); font-size:12px; }
   select, input { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:3px 5px; font:inherit; }
-  input { width:64px; }
+  select.src, select.lfo { width:9em; }
+  input { width:56px; }
   button.cap { background:none; border:1px solid var(--line); color:var(--dim); border-radius:4px; cursor:pointer; font-size:11px; padding:2px 5px; }
   button.cap:hover { color:var(--fg); }
   #err { color:var(--warn); margin-left:8px; font-size:12px; }
-  #craft { margin-bottom:16px; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
-  #craft summary { cursor:pointer; font-weight:600; }
-  #craft div { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:8px; }
-  #craft label { color:var(--dim); font-size:12px; }
-  #craft p { color:var(--dim); font-size:12px; margin:6px 0 2px; }
-  @media (max-width:700px) { .range, .out { display:none; } }
+  @media (max-width:1080px) {
+    main { grid-template-columns:minmax(0, 1fr); }
+    #side { position:static; max-height:none; }
+  }
+  /* too narrow for name + controls side by side: name, range and output on one line above the controls */
+  @container (max-width:840px) {
+    .knob { grid-template-columns:minmax(0, 1fr); }
+    .knob .id { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; }
+    .knob .range { margin:0; }
+    .knob .out { flex:1; min-width:140px; max-width:280px; }
+  }
 </style>
 </head>
 <body>
 <h1>The Signal Lab <small>Bela → osc2laser wiring</small>
   <button class="cap" id="reset" title="unbind every knob">Reset signals</button><span id="err"></span></h1>
-<div id="signals"><span id="empty">No signals yet. Touch a wired sensor.</span></div>
-<details id="craft"><summary>Trill Craft settings</summary>
-  <div id="craftSet"></div>
-  <p>Sent live to the Bela, like the craft-visual example. Values reset when the Bela restarts: copy the
-  "[craft] prescaler …" line from the Bela log into kCraftDefaults in trill-oled.cpp. Prescaler, bits, speed and full
-  take a new baseline, so keep hands off the pads.</p>
-</details>
-<nav id="tabs"></nav>
-<table>
-  <thead><tr><th>Knob</th><th class="range">Range</th><th>Signal</th><th>Input min … max</th><th>Scale</th><th>LFO rate</th><th>Wave</th><th>Depth</th><th>Max Hz</th><th class="out">Output</th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
+<main>
+<aside id="side">
+  <p id="empty">No signals yet. Touch a sensor.</p>
+  <div id="signals"></div>
+  <details id="craft"><summary>Trill Craft settings</summary>
+    <div id="craftSet"></div>
+    <p>Sent live to the Bela, like the craft-visual example. Values reset when the Bela restarts: copy the
+    "[craft] prescaler …" line from the Bela log into kCraftDefaults in trill-oled.cpp. Prescaler, bits, speed and full
+    take a new baseline, so keep hands off the pads.</p>
+  </details>
+</aside>
+<section>
+  <nav id="tabs"></nav>
+  <div id="rows"></div>
+</section>
+</main>
 <script>
 let state = { signals:{}, knobs:[], mappings:{}, outputs:{}, muted:[], audible:[] };
-let tab = null;
-try { tab = localStorage.getItem("tab"); } catch {}
+let tab = null, closed = [];
+try { tab = localStorage.getItem("tab"); closed = JSON.parse(localStorage.getItem("closed")) || []; } catch {}
 const $ = (s, el=document) => el.querySelector(s);
 const fmt = v => Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(3);
 const pct = (v, lo, hi) => (hi === lo ? 0 : Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100))) + "%";
+const byName = (a, b) => a.localeCompare(b, undefined, { numeric:true }); // craft/2 before craft/10
 const groups = () => [...new Set(state.knobs.map(k => k.group))];
 // mirrors out_range() in signal_lab.py
 const outRange = (k, f) => { const a = k.min <= 0 && 0 <= k.max ? 0 : k.min; return [a + (k.min - a) * f, a + (k.max - a) * f]; };
-const knownSignals = () => [...new Set([...Object.keys(state.signals), ...Object.values(state.mappings).map(m => m.signal)])].sort();
+const knownSignals = () => [...new Set([...Object.keys(state.signals), ...Object.values(state.mappings).map(m => m.signal)])].sort(byName);
+
+// where a signal enters the Bela: id, label, hint, name pattern (names from ~names in _main.scd and trill-oled.cpp).
+// First match wins, so joy/button is digital before joy/* is analog.
+const TYPES = [["audio", "Audio", "piezos, Audio In L/R", /^piezo\//],
+               ["i2c", "I2C", "Trill Flex, Craft", /^(flex|craft\/\d+)$/],
+               ["digital", "Digital", "buttons, digital 0–2", /^(joy\/button|button|horn)$/],
+               ["analog", "Analog", "Analog In 0–4", /^(pot|joy|heart)\//],
+               ["other", "Other", "", /./]];
+const typeOf = n => TYPES.find(t => t[3].test(n))[0];
+for (const [id, label, hint] of TYPES) {
+  const d = document.createElement("details");
+  d.className = "type"; d.id = "type-" + id; d.open = !closed.includes(id); d.hidden = id === "other";
+  d.innerHTML = `<summary>${label} <small class="n"></small><small>${hint}</small></summary><div class="list"></div>`;
+  d.ontoggle = () => {
+    closed = closed.filter(c => c !== id).concat(d.open ? [] : [id]);
+    try { localStorage.setItem("closed", JSON.stringify(closed)); } catch {}
+  };
+  $("#signals").append(d);
+}
+$("#type-i2c").append($("#craft"));
 
 // name, default (kCraftDefaults in trill-oled.cpp), min, max, step
 const CRAFT = [["prescaler",1,1,8,1], ["noise",0,0,1,0.005], ["bits",12,9,16,1], ["speed",0,0,3,1],
@@ -92,7 +148,7 @@ $("#reset").onclick = async () => {
   if (r.ok) { state.mappings = {}; renderTabs(); renderRows(); }
 };
 
-// mute = no Bela sound for that signal; it still drives its knobs
+// mute = no sound for that signal; it still drives its knobs
 async function mute(signal, muted) {
   const r = await fetch("/mute", { method:"POST", body:JSON.stringify({ signal, muted }) });
   const body = await r.json();
@@ -122,63 +178,78 @@ function renderTabs() {
   }));
 }
 
+// signal dropdown, grouped by type like the left column
 function signalOptions(sel, current) {
-  const opts = ["", ...knownSignals()];
-  if (sel.dataset.opts === opts.join("|")) return;
-  sel.dataset.opts = opts.join("|");
-  sel.replaceChildren(...opts.map(s => new Option(s || "— none —", s)));
+  const sigs = knownSignals();
+  if (sel.dataset.opts === sigs.join("|")) return;
+  sel.dataset.opts = sigs.join("|");
+  sel.replaceChildren(new Option("— none —", ""), ...TYPES.map(([id, label]) => {
+    const g = document.createElement("optgroup");
+    g.label = label;
+    g.append(...sigs.filter(s => typeOf(s) === id).map(s => new Option(s, s)));
+    return g;
+  }).filter(g => g.children.length));
   sel.value = current || "";
 }
 
 function renderRows() {
   $("#rows").replaceChildren(...state.knobs.filter(k => k.group === tab).map(k => {
-    const tr = document.createElement("tr");
-    tr.dataset.addr = k.addr;
+    const row = document.createElement("div");
+    row.className = "knob"; row.dataset.addr = k.addr;
     // toggle/next rows: a press (signal past the middle of min … max) flips or steps, so no scale/LFO
-    const press = k.kind === "knob" ? "" : `<td colspan="5" class="range">press = ${k.kind === "toggle" ? "flip on/off" : "next value"}</td>`;
-    tr.innerHTML = `<td title="${k.addr}"><b>${k.title || k.name}</b>${k.title ? ` <small class="range">${k.name}</small>` : ""}</td>
-      <td class="range">${k.min} … ${k.max}</td>
-      <td>← <select class="src"></select></td>
-      <td><input class="lo" type="number" step="0.01"> <button class="cap" data-f="in_min">set</button>
-          … <input class="hi" type="number" step="0.01"> <button class="cap" data-f="in_max">set</button></td>
-      ${press || `<td>× <input class="sc" type="number" step="0.05" min="0" max="1" title="scale the knob's range"></td>
-      <td>∿ <select class="lfo" title="signal that sets the LFO frequency; none = no LFO"></select></td>
-      <td><select class="wv"><option value="sine">∿ sine</option><option value="triangle">⋀ triangle</option><option value="square">⊓ square</option></select></td>
-      <td>± <input class="dp" type="number" step="0.05" min="0" max="1" title="LFO swing, fraction of the range"></td>
-      <td><input class="hz" type="number" step="0.5" min="0" max="100" title="LFO Hz when the rate signal is 1"></td>`}
-      <td class="out"><div class="bar"><i></i></div><span></span></td>`;
+    const press = k.kind !== "knob";
+    row.innerHTML = `<div class="id" title="${k.addr}">
+        <div><b>${k.title || k.name}</b>${k.title ? ` <small>${k.name}</small>` : ""}</div>
+        <div class="range"></div>
+        <div class="out"><div class="bar"><i></i></div><span></span></div>
+      </div>
+      <div class="ctl">
+        <div class="line">
+          <label class="f"><small>Signal</small><select class="src"></select></label>
+          <div class="f"><small>Input</small><input class="lo" type="number" step="0.01"><button class="cap" data-f="in_min">set</button>
+            … <input class="hi" type="number" step="0.01"><button class="cap" data-f="in_max">set</button></div>
+          ${press ? "" : `<label class="f"><small>Scale</small>× <input class="sc" type="number" step="0.05" min="0" max="1" title="scale the knob's range"></label>`}
+        </div>
+        ${press ? `<div class="line press">press = ${k.kind === "toggle" ? "flip on/off" : "next value"}</div>` : `<div class="line lfo-line">
+          <label class="f"><small>LFO rate</small><select class="lfo" title="signal that sets the LFO frequency; none = no LFO"></select></label>
+          <label class="f"><small>Wave</small><select class="wv"><option value="sine">∿ sine</option><option value="triangle">⋀ triangle</option><option value="square">⊓ square</option></select></label>
+          <label class="f"><small>Depth</small>± <input class="dp" type="number" step="0.05" min="0" max="1" title="LFO swing, fraction of the range"></label>
+          <label class="f"><small>Max Hz</small><input class="hz" type="number" step="0.5" min="0" max="100" title="LFO Hz when the rate signal is 1"></label>
+        </div>`}
+      </div>`;
     const m = state.mappings[k.addr] || { in_min:0, in_max:1, scale:1 };
-    const sel = $(".src", tr), lfo = $(".lfo", tr);
+    const sel = $(".src", row), lfo = $(".lfo", row);
     signalOptions(sel, m.signal);
     sel.onchange = () => post(k.addr, { signal: sel.value || null });
-    $(".lo", tr).value = m.in_min; $(".hi", tr).value = m.in_max;
-    $(".lo", tr).onchange = e => post(k.addr, { in_min: +e.target.value });
-    $(".hi", tr).onchange = e => post(k.addr, { in_max: +e.target.value });
-    tr.querySelectorAll(".cap").forEach(b => b.onclick = () => {
+    $(".lo", row).value = m.in_min; $(".hi", row).value = m.in_max;
+    $(".lo", row).onchange = e => post(k.addr, { in_min: +e.target.value });
+    $(".hi", row).onchange = e => post(k.addr, { in_max: +e.target.value });
+    row.querySelectorAll("[data-f]").forEach(b => b.onclick = () => {
       const s = state.mappings[k.addr]?.signal;
       if (!s || !(s in state.signals)) return;
       const v = +state.signals[s].toFixed(3);
-      $(b.dataset.f === "in_min" ? ".lo" : ".hi", tr).value = v;
+      $(b.dataset.f === "in_min" ? ".lo" : ".hi", row).value = v;
       post(k.addr, { [b.dataset.f]: v });
     });
-    if (press) return tr;
+    if (press) return row;
     signalOptions(lfo, m.lfo);
-    $(".wv", tr).value = m.wave ?? "sine";
-    $(".wv", tr).onchange = e => post(k.addr, { wave: e.target.value });
-    $(".dp", tr).value = m.depth ?? 0.25; $(".hz", tr).value = m.hz_max ?? 5;
+    $(".wv", row).value = m.wave ?? "sine";
+    $(".wv", row).onchange = e => post(k.addr, { wave: e.target.value });
+    $(".dp", row).value = m.depth ?? 0.25; $(".hz", row).value = m.hz_max ?? 5;
     lfo.onchange = () => post(k.addr, { lfo: lfo.value || null });
-    $(".dp", tr).onchange = e => post(k.addr, { depth: Math.min(1, Math.max(0, +e.target.value)) });
-    $(".hz", tr).onchange = e => post(k.addr, { hz_max: Math.min(100, Math.max(0, +e.target.value)) });
-    $(".sc", tr).value = m.scale ?? 1;
-    $(".sc", tr).onchange = e => post(k.addr, { scale: Math.min(1, Math.max(0, +e.target.value)) });
-    return tr;
+    $(".dp", row).onchange = e => post(k.addr, { depth: Math.min(1, Math.max(0, +e.target.value)) });
+    $(".hz", row).onchange = e => post(k.addr, { hz_max: Math.min(100, Math.max(0, +e.target.value)) });
+    $(".sc", row).value = m.scale ?? 1;
+    $(".sc", row).onchange = e => post(k.addr, { scale: Math.min(1, Math.max(0, +e.target.value)) });
+    return row;
   }));
   updateLive();
 }
 
 function updateLive() {
-  const names = Object.keys(state.signals).sort();
+  const names = Object.keys(state.signals).sort(byName);
   $("#empty").hidden = names.length > 0;
+  const added = new Set();
   for (const n of names) {
     let el = document.getElementById("sig:" + n);
     if (!el) {
@@ -187,34 +258,43 @@ function updateLive() {
       el.innerHTML = `<b></b><button class="cap mute"></button><div class="bar"><i></i></div>`;
       $("b", el).textContent = n;
       $(".mute", el).onclick = () => mute(n, !state.muted.includes(n));
-      $("#signals").append(el);
+      $(`#type-${typeOf(n)} .list`).append(el);
+      added.add(typeOf(n));
     }
     $("i", el).style.width = pct(state.signals[n], 0, 1);
-    // the Bela only sounds signals wired to a knob and not muted
+    // only signals wired to a knob and not muted make a sound
     const muted = state.muted.includes(n), sounds = state.audible.includes(n);
     el.classList.toggle("quiet", !sounds);
-    el.title = sounds ? "sounds on the Bela when it moves" : muted ? "muted on the Bela" : "silent on the Bela: not wired to a knob";
+    el.title = sounds ? "sounds when it moves" : muted ? "muted" : "silent: not wired to a knob";
     $(".mute", el).textContent = muted ? "🔇" : "🔈";
-    $(".mute", el).title = muted ? "unmute its Bela sound" : "mute its Bela sound";
+    $(".mute", el).title = muted ? "unmute its sound" : "mute its sound";
   }
-  for (const tr of $("#rows").children) {
-    const k = state.knobs.find(k => k.addr === tr.dataset.addr);
-    const sel = $(".src", tr), lfo = $(".lfo", tr);
-    if (document.activeElement !== sel) signalOptions(sel, state.mappings[k.addr]?.signal);
+  for (const t of added) { // keep each type's chips in name order, whatever order they first arrive in
+    const sec = $("#type-" + t), list = $(".list", sec);
+    list.append(...[...list.children].sort((a, b) => byName(a.id, b.id)));
+    $(".n", sec).textContent = list.children.length;
+    sec.hidden = false;
+  }
+  for (const row of $("#rows").children) {
+    const k = state.knobs.find(k => k.addr === row.dataset.addr);
+    const m = state.mappings[k.addr];
+    row.classList.toggle("wired", !!m);
+    const sel = $(".src", row), lfo = $(".lfo", row);
+    if (document.activeElement !== sel) signalOptions(sel, m?.signal);
     const v = state.outputs[k.addr];
+    $(".out i", row).style.width = v === undefined ? 0 : pct(v, k.min, k.max);
     if (k.kind !== "knob") {
-      $(".range", tr).textContent = k.kind === "toggle" ? "off / on" : `${k.options.length} values`;
-      $(".out i", tr).style.width = v === undefined ? 0 : pct(v, k.min, k.max);
-      $(".out span", tr).textContent = v === undefined ? "" :
+      $(".range", row).textContent = k.kind === "toggle" ? "off / on" : `${k.options.length} values`;
+      $(".out span", row).textContent = v === undefined ? "" :
         k.kind === "toggle" ? (v > 0.5 ? "on" : "off") : k.options.find(o => o[1] === v)?.[0] ?? v;
       continue;
     }
-    if (document.activeElement !== lfo) signalOptions(lfo, state.mappings[k.addr]?.lfo);
-    const f = state.mappings[k.addr]?.scale ?? 1;
+    if (document.activeElement !== lfo) signalOptions(lfo, m?.lfo);
+    $(".lfo-line", row).classList.toggle("off", !m?.lfo);
+    const f = m?.scale ?? 1;
     const [lo, hi] = outRange(k, f);
-    $(".range", tr).textContent = f === 1 ? `${k.min} … ${k.max}` : `${fmt(lo)} … ${fmt(hi)}  (of ${k.min} … ${k.max})`;
-    $(".out i", tr).style.width = v === undefined ? 0 : pct(v, k.min, k.max);
-    $(".out span", tr).textContent = v === undefined ? "" : fmt(v);
+    $(".range", row).textContent = f === 1 ? `${k.min} … ${k.max}` : `${fmt(lo)} … ${fmt(hi)}  (of ${k.min} … ${k.max})`;
+    $(".out span", row).textContent = v === undefined ? "" : fmt(v);
   }
 }
 

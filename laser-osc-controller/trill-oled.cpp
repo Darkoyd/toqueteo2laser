@@ -22,6 +22,7 @@ const int kDisplayPort = 2347; // Signal Lab sends /display "<text>" and /craft/
 const unsigned int kPollUs = 12000; // ~80 Hz, same as Bela's Trill examples
 // ponytail: fixed dead band, tune if the laser jitters or feels steppy
 const float kMinChange = 0.005f;
+constexpr bool kVerbose = false; // true: print every /signal/flex and the strongest raw channels once a second (tuning)
 // Flex tuning knobs, values recommended in the flex-visual example
 const int kPrescaler = 4;           // higher = more sensitive / more resistive material
 const float kNoiseThreshold = 0.03f;
@@ -188,7 +189,8 @@ void readAndSend()
 			float loc = gCd.touchLocation(0); // 0..1 along the strip
 			if(!sent || std::fabs(loc - last) > kMinChange) {
 				sendSignal("/signal/flex", loc);
-				printf("[osc] /signal/flex %.3f\n", loc);
+				if(kVerbose)
+					printf("[osc] /signal/flex %.3f\n", loc);
 				last = loc;
 				sent = true;
 			}
@@ -246,7 +248,7 @@ void readAndSend()
 			lastPads = pads;
 		}
 		static unsigned int tick = 0;
-		if(++tick * kPollUs >= 1000000) { // once a second: strongest channel
+		if(kVerbose && ++tick * kPollUs >= 1000000) { // once a second: strongest channel
 			tick = 0;
 			auto& raw = gFlex.rawData;
 			size_t peak = std::max_element(raw.begin(), raw.end()) - raw.begin();

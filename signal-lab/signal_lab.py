@@ -1,5 +1,6 @@
 # The Signal Lab: routes Bela /signal/<name> (0..1) to osc2laser knobs, rewired live from a web page.
 # Bela -> udp :2346 -> here -> udp 127.0.0.1:2345 (osc2laser). UI on http://127.0.0.1:8000
+# Every signal also goes to sounds.scd (sclang on udp 127.0.0.1:2348), which plays the audible ones.
 import json
 import math
 import sys
@@ -15,15 +16,16 @@ from pythonosc.udp_client import SimpleUDPClient
 HERE = Path(__file__).parent
 TEMPLATE = HERE.parent / "osc2laser/osc-senders/open-stage-control/pavillion-template.json"
 MAPPING = HERE / "mapping.json"
-MUTED = HERE / "muted.json"  # signals whose Bela sound is muted
+MUTED = HERE / "muted.json"  # signals whose sound is muted
 SIGNAL_PORT, LASER, HTTP_PORT = 2346, ("127.0.0.1", 2345), 8000
+SOUND = ("127.0.0.1", 2348)  # sounds.scd
 BELA_DISPLAY = ("192.168.7.2", 2347)  # Bela's OLED (shape name on every step) and live Trill Craft settings;
 # the ip follows wherever the signals come from (USB 192.168.7.2 or the Bela hotspot 192.168.8.2)
-# sclang sends signals to who says /hello; its args are the signals that may sound (see audible())
-BELA_HELLO = [("192.168.7.2", SIGNAL_PORT), ("192.168.8.2", SIGNAL_PORT)]
-# /craft/<name> value ranges, mirrors kCraftMin/kCraftMax in trill-oled.cpp; None = no value (calibrate)
-CRAFT = {"prescaler": (1, 8), "noise": (0, 1), "bits": (9, 16), "speed": (0, 3),
-         "threshold": (0, 1), "full": (0.01, 1), "calibrate": None}
+# the Bela's sclang sends signals to who says /hello; its args are the signals that may sound (see audible()),
+# which only sounds.scd uses
+HELLO = [("192.168.7.2", SIGNAL_PORT), ("192.168.8.2", SIGNAL_PORT), SOUND]
+# /craft/<name> settings, trill-oled.cpp clamps each to its kCraftMin..kCraftMax; calibrate takes no value
+CRAFT = {"prescaler", "noise", "bits", "speed", "threshold", "full", "calibrate"}
 SKIP = {"/laserobject": {0}}  # dropdown values a press never steps to (0 = Blank)
 VERBOSE = "-v" in sys.argv or "--verbose" in sys.argv
 LFO_TICK = 1 / 50  # ponytail: fixed 50 Hz send rate for LFO knobs, raise if fast LFOs look steppy
@@ -65,7 +67,9 @@ def load_knobs(path):
                 walk(v)
 
     walk(json.loads(Path(path).read_text()))
-    return knobs
+    # drop /parameters/<object>_* knobs of objects the /laserobject dropdown can't show ("5: Cubic 2" -> cubic2)
+    shown = {lbl.split(": ", 1)[-1].replace(" ", "").lower() for lbl, _ in knobs["/laserobject"]["options"]}
+    return {a: k for a, k in knobs.items() if not a.startswith("/parameters/") or k["group"] in shown | {"homography"}}
 
 
 def scale(v, in_min, in_max, lo, hi, offset=0.0):
@@ -87,10 +91,11 @@ outputs = {}  # knob addr -> last value sent
 pressed = {}  # toggle/next addr -> is its signal held down
 mappings = json.loads(MAPPING.read_text()) if MAPPING.exists() else {}
 muted = set(json.loads(MUTED.read_text())) if MUTED.exists() else set()
-hello_now = threading.Event()  # set when audible() changes, so the Bela hears it before the next 1 s hello
+hello_now = threading.Event()  # set when audible() changes, so sounds.scd hears it before the next 1 s hello
 knobs = {}
 laser = SimpleUDPClient(*LASER)
 bela = SimpleUDPClient(*BELA_DISPLAY)
+sound = SimpleUDPClient(*SOUND)
 
 
 WAVES = {  # phase 0..2pi -> -1..1, all rising through 0 at phase 0
@@ -150,6 +155,7 @@ def on_signal(address, *args):
     if not args or not isinstance(args[0], (int, float)):
         return
     name, v = address[len("/signal/"):], float(args[0])
+    sound.send_message(address, v)
     with lock:
         if VERBOSE and name not in signals:
             print(f"new signal {name}")
@@ -170,15 +176,15 @@ def on_signal(address, *args):
 
 
 def audible():  # caller holds lock
-    """Signals the Bela may play a sound for: wired to a knob (as its signal or LFO rate) and not muted."""
+    """Signals sounds.scd may play a sound for: wired to a knob (as its signal or LFO rate) and not muted."""
     wired = {s for addr, m in mappings.items() if addr in knobs for s in (m["signal"], m.get("lfo")) if s}
     return sorted(wired - muted)
 
 
 def hello_loop():
-    # every second, on both links: whichever reaches the Bela tells sclang where to send the signals
-    # and which of them may sound
-    clients = [SimpleUDPClient(*a) for a in BELA_HELLO]
+    # every second, on both links: whichever reaches the Bela tells its sclang where to send the signals;
+    # tells sounds.scd which of them may sound
+    clients = [SimpleUDPClient(*a) for a in HELLO]
     while True:
         with lock:
             names = audible()
@@ -298,10 +304,7 @@ class Http(BaseHTTPRequestHandler):
             name = req["setting"]
             if name not in CRAFT:
                 raise ValueError("setting must be one of " + ", ".join(CRAFT))
-            rng = CRAFT[name]
-            value = [] if rng is None else float(req["value"])
-            if rng and not rng[0] <= value <= rng[1]:
-                raise ValueError(f"{name} must be {rng[0]}..{rng[1]}")
+            value = [] if name == "calibrate" else float(req["value"])
         except (ValueError, KeyError, TypeError) as e:
             return self.reply(400, {"error": str(e)})
         try:
@@ -337,6 +340,7 @@ def selftest():
     k = load_knobs(TEMPLATE)
     assert k["/effect/perspective/pitch"]["min"] < 0 and "/effect/xy_pos" not in k
     assert k["/parameters/homography_show_square"]["kind"] == "toggle"
+    assert "/parameters/cubic2_a00" in k and "/parameters/wave_amplitude" not in k  # no Wave in the dropdown
     shapes = [o[1] for o in k["/laserobject"]["options"]]
     assert shapes[:4] == [1, 2, 3, 4], shapes  # Blank skipped, 6+ are svg/ files
     knobs.update(k)
