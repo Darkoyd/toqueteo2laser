@@ -22,7 +22,7 @@ const int kDisplayPort = 2347; // Signal Lab sends /display "<text>" and /craft/
 const unsigned int kPollUs = 12000; // ~80 Hz, same as Bela's Trill examples
 // ponytail: fixed dead band, tune if the laser jitters or feels steppy
 const float kMinChange = 0.005f;
-constexpr bool kVerbose = false; // true: print every /signal/flex and the strongest raw channels once a second (tuning)
+constexpr bool kVerbose = true; // true: print every /signal/flex and the strongest raw channels once a second (tuning)
 // Flex tuning knobs, values recommended in the flex-visual example
 const int kPrescaler = 4;           // higher = more sensitive / more resistive material
 const float kNoiseThreshold = 0.03f;

@@ -101,7 +101,7 @@ Two perspective controls bend the picture to fit a tilted wall: `/effect/perspec
 ## Connecting to the Bela
 
 - **USB:** Bela `192.168.7.2`, Mac `192.168.7.1`. `ssh root@bela.local`.
-- **Wi-Fi:** the Bela runs a hotspot called `bela-laser` (password in `/etc/hostapd/hostapd.conf` on the Bela).
+- **Wi-Fi:** the Bela runs a hotspot called `belaser` (password in `/etc/hostapd/hostapd.conf` on the Bela).
   Join it from the Mac: Bela `192.168.8.2`, Mac `192.168.8.1`. `ssh root@192.168.8.2`.
 
 The Signal Lab finds the Bela on either link by itself. The Bela sends signals only to a Mac whose Signal Lab is running.

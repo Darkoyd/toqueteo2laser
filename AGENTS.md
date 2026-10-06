@@ -57,7 +57,7 @@ Open Stage Control (UI) --OSC 127.0.0.1:2345------------------------------------
   `ssh root@bela.local '(nohup make -C ~/Bela PROJECT=laser-osc-controller runonly > /root/laser-osc-controller.log 2>&1 &)'`,
   stop with `killall sclang scsynth` (`trill-oled` exits with `run.sh`). Watch with `tail -f /root/laser-osc-controller.log`.
 - I2C scan: `ssh root@bela.local i2cdetect -y -r 1`
-- Wi-Fi: the Bela runs a hotspot `bela-laser` (WPA2, password in `/etc/hostapd/hostapd.conf` on the Bela) on its
+- Wi-Fi: the Bela runs a hotspot `belaser` (WPA2, password in `/etc/hostapd/hostapd.conf` on the Bela) on its
   RTL8188FU USB dongle (`0bda:f179`, out-of-tree driver `kelebek333/rtl8188fu` in `/root/rtl8188fu`, kernel 4.14 has none).
   `wlan0` stanza in the Bela's `/etc/network/interfaces` (original in `interfaces.orig`): static `192.168.8.2`,
   starts hostapd and its own dhcpd (`/etc/dhcp/dhcpd-wlan0.conf`), which gives the Mac `192.168.8.1`
